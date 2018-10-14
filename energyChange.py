@@ -9,7 +9,7 @@
 # feedback matrices and other things I haven't documented yet.
 
 from sys import exit, argv
-from PyQt4.QtCore import QString, QTime, QDate
+from PyQt4.QtCore import QTime, QDate
 from PyQt4.QtGui import QApplication, QMainWindow
 from epics import caget, caput
 from PyQt4 import QtCore, QtGui
@@ -637,14 +637,15 @@ class EnergyChange(QMainWindow):
         columnLst = ["mod_dte", "config_title", "descr"]
 
         try:
-            photonEnergyText = str(self.ui.PhotonEnergyEdit.text())
-            electronEnergyText = str(self.ui.ElectronEnergyEdit.text())
+            photonEnergyText = self.ui.PhotonEnergyEdit.text()
+            electronEnergyText = self.ui.ElectronEnergyEdit.text()
 
             if photonEnergyText:
-                if int(self.ui.PhotonEnergyEdit.text()) < 350:
+                photonEnergy = float(photonEnergyText)
+                if photonEnergy < 350:
                     self.ui.PhotonEnergyEdit.setText('350')
 
-                scoreData = self.filterScores(photonEnergyText + "eV",
+                scoreData = self.filterScores(photonEnergy,
                                               "color: rgb(100,255,100)",
                                               "color: red", 300, fourWeeksBack,
                                               end, columnLst)
@@ -652,7 +653,7 @@ class EnergyChange(QMainWindow):
                 self.ui.ElectronEnergyEdit.setText('')
 
             elif electronEnergyText:
-                scoreData = self.filterScores(electronEnergyText + "eV",
+                scoreData = self.filterScores(float(electronEnergyText),
                                               "color: red",
                                               "color: rgb(100,255,100)", 0.5,
                                               fourWeeksBack, end, columnLst)

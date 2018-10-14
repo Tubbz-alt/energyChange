@@ -115,7 +115,8 @@ class Pyscore(object):
             print 'SCORE error getting data'
             raise
 
-        self.Etime_array(sample_snaps, energy, emin, emax, est_energy, edelta)
+        return self.Etime_array(sample_snaps, energy, emin, emax, est_energy,
+                                edelta)
 
     # Searches the database for the given PVs (entered as a list).
     # It returns a dictionary of the form {'PV1':'region1',...} if the PV
@@ -184,8 +185,8 @@ class Pyscore(object):
         title_column_num = columns.index("CONFIG_TITLE")
         results = {}
 
-        for (col_number, col_name) in enumerate(columns):
-            results[col_name] = []
+        for column in columns:
+            results[column] = []
 
         if not Emin and not Emax and est_energy:
             if Edelta:
@@ -310,7 +311,7 @@ class Pyscore(object):
                 new_array = [w.replace('TD11 to BSY-LEM', 'Cu Linac-LEM')
                                  .replace('LTU-LEM', 'Hard BSY thru LTUH-LEM')
                              for w in new_array]
-                
+
         return list(set(new_array))[0]
 
     # Closes the connection to the SCORE Oracle database. Done after each main
