@@ -24,7 +24,8 @@ from threading import Thread
 from pytz import utc, timezone
 from message import log
 from random import randint
-from pyscore import Pyscore
+from pyScore import Pyscore
+from copy import deepcopy
 
 from energyChange_UI import echg_UI
 
@@ -44,11 +45,6 @@ class EnergyChange(QMainWindow):
         item = QtGui.QTableWidgetItem()
         item.setText('---')
         self.ui.tableWidget.setItem(6, 3, item)
-
-        # item = QtGui.QTableWidgetItem()
-        # item.setText('---')
-        # Blank out 24-8 as this is TCAV and we don't care about it
-        # self.ui.tableWidget.setItem(7, 3, item)
 
         self.ui.textBrowser.append('Energy Change Initialized.  Pick a time.')
 
@@ -124,8 +120,16 @@ class EnergyChange(QMainWindow):
 
         self.ui.statusText.setText(greetings[randint(0, 45)])
         self.loadStyleSheet()
+        
+        self.gdetData = {"GD1PressureHi": None, "GD1PressureLo": None, 
+                         "voltagePMT241": None, "voltagePMT242": None, 
+                         "GD2PressureHi": None, "GD2PressureLo": None,
+                         "voltagePMT361": None, "voltagePMT362": None,
+                         "calibrationPMT241": None, "calibrationPMT242": None, 
+                         "calibrationPMT361": None, "calibrationPMT362": None,
+                         "offsetPMT241": None, "offsetPMT242": None, 
+                         "offsetPMT361": None, "offsetPMT362": None}
 
-        self.gdetCalibration = {241: None, 242: None, 361: None, 362: None}
         self.BC1 = {"current": None, "leftJaw": None, "rightJaw": None}
         self.BC2 = {"mover": None, "phase": None}
 
@@ -135,10 +139,7 @@ class EnergyChange(QMainWindow):
         self.electron = {"energy": None, "energyNow": None}
         self.photon = {"energy": None, "energyNow": None}
 
-        self.GD1 = {"Hi": None, "Lo": None, "PMT1": None, "PMT2": None}
-        self.GD2 = {"Hi": None, "Lo": None, "PMT1": None, "PMT2": None}
-
-        self.klystronComplement = {"desired": [], "original": []}
+        self.klystronComplement = {"desired": {}, "original": {}}
 
         self.L1X = {"amplitude": None, "phase": None}
         self.L2 = {"amplitude": None, "peakCurrent": None, "phase": None}
@@ -150,8 +151,6 @@ class EnergyChange(QMainWindow):
 
         self.mirror = {"change": False, "hard": False, "soft": False,
                        "softSwitch": False, "AMO": False, "SXR": False}
-
-        self.gdetOffset = {241: None, 242: None, 361: None, 362: None}
 
         self.timestamp = {"requested": None, "archiveStart": None,
                           "archiveStop": None, "changeStarted": None}
@@ -169,7 +168,7 @@ class EnergyChange(QMainWindow):
         self.xcav = {"x": None, "y": None}
 
         # Set progress bar to zero on GUI opening
-        self.ui.progbar.setValue(self.diagnostics["progress"])
+        self.ui.progbar.setValue(0)
 
         # Get list of recent configs and populate GUI score table
         self.GetScores()
@@ -271,41 +270,7 @@ class EnergyChange(QMainWindow):
     def changeEnergy(self):
 
         self.setupUiAndDiagnostics()
-
-        if self.ui.stopper_cb.isChecked():
-            # Insert stoppers and disable feedback
-            self.DisableFB()
-
-        if self.mirror["change"] or self.mirror["softSwitch"]:
-            # Set mirrors immediately so they can start moving as they take
-            # time (will check mirrors at end of this function using
-            # self.CheckMirrors)
-            self.SetMirrors()
-
-        self.updateProgress(10)
-
-        # Load scores if user wants
-        if (self.ui.score_cb.isChecked() or self.ui.injector_cb.isChecked()
-                or self.ui.taper_cb.isChecked()):
-            self.LoadScores()
-
-        else:
-            # Add progress to progress bar; this is done in LoadScores but
-            # needs to be done here if no scores are loaded
-            self.updateProgress(35)
-
-        if self.ui.klystron_cb.isChecked():
-            # Set klystron complement
-            self.SetKlys()
-
-        else:
-            # Make up missing progress if klystrons are not set by this GUI
-            self.updateProgress(25)
-
-        if self.ui.fast6x6_cb.isChecked():
-            # Set 6x6 parameters and feedback matrices
-            self.Set6x6()
-            self.updateProgress(5)
+        self.implementSelectedChanges()
 
         # Set gas detector recipe/pressures/PMTs: conditional statements
         # are contained in function (e.g. user doesn't want PMTs set)
@@ -313,57 +278,51 @@ class EnergyChange(QMainWindow):
         self.updateProgress(5)
         self.SetAllTheSetpoints()
         self.updateProgress(10)
+
         # Get results of score load, make sure it worked
         self.CheckScoreLoads()
+
+        self.checkAndStandardize()
+
+        if self.mirror["change"] or self.mirror["softSwitch"]:
+            # Check to make sure that mirror gets to where it should
+            self.CheckMirrors()
+
+        self.updateProgress(100 - self.diagnostics["progress"])
+
+        # Reinitialize button to proper state - we're done with energy
+        # change!
+        self.ui.startButton.setText("Get Values")
+
+        self.printStatus()
+
+        self.logTime()
+
+    def checkAndStandardize(self):
         if self.ui.stdz_cb.isChecked():
+            # TODO why is this relevant information?
             # sometimes archive appliance returns ridiculous # of digits-
             # i.e. 3.440000000000000013 instead of 3.44
-            if (self.electron["energyNow"] > self.electron["energy"]
-                    and not self.diagnostics["scoreProblem"]
-                    and (self.electron["energyNow"] - self.electron[
-                        "energy"]) > 0.005):
+            energyDiff = self.electron["energyNow"] - self.electron["energy"]
+
+            if energyDiff > 0.005 and not self.diagnostics["scoreProblem"]:
                 # Standardize magnets if going down in energy and there
                 # wasn't some problem loading scores
                 self.StdzMags()
 
-            if (self.electron["energyNow"] > self.electron["energy"]
-                    and self.diagnostics["scoreProblem"]):
-                self.ui.textBrowser.append("<i>"
-                                           + str(datetime.now())[11:19]
+            if energyDiff > 0 and self.diagnostics["scoreProblem"]:
+                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
                                            + "-</i> "
                                            + "Skipping STDZ- problem "
                                              "loading scores")
-        if self.mirror["change"] or self.mirror["softSwitch"]:
-            # Check to make sure that mirror gets to where it should
-            self.CheckMirrors()
-        self.diagnostics["progress"] = 100
-        self.ui.progbar.setValue(self.diagnostics["progress"])
-        # Reinitialize button to proper state - we're done with energy
-        # change!
-        self.ui.startButton.setText("Get Values")
-        # Everything went fine- woohoo!
-        if not self.diagnostics["scoreProblem"]:
-            self.ui.textBrowser.append("<i>"
-                                       + str(datetime.now())[11:19]
-                                       + "-</i> "
-                                       + 'DONE- remember CAMs!')
-            self.ui.statusText.setText("DONE- remember CAMs!")
 
-        # If there was some problem loading scores, inform the user.
-        else:
-            self.ui.textBrowser.append("<i>"
-                                       + str(datetime.now())[11:19]
-                                       + "-</i> "
-                                       + 'DONE- problem Loading score(s), '
-                                         'see xterm')
-            self.ui.statusText.setText("DONE- problem w/scores, SEE XTERM")
+    def logTime(self):
         try:
             # Time logging
             curtime = datetime.now()
             elapsed = curtime - self.timestamp["changeStarted"]
             old_value = caget('SIOC:SYS0:ML03:AO707')
-            caput('SIOC:SYS0:ML03:AO707',
-                  old_value + elapsed.total_seconds())
+            caput('SIOC:SYS0:ML03:AO707', old_value + elapsed.total_seconds())
 
             # Write textBrowser text to a file so I can diagnose the basics
             # when something goes wrong
@@ -381,6 +340,59 @@ class EnergyChange(QMainWindow):
         except:
             print 'problem with time logging or log writing'
 
+    def printStatusMessage(self, message, printToStatus=True):
+        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
+                                   + "-</i> " + message)
+        if printToStatus:
+            self.ui.statusText.setText(message)
+
+    def printStatus(self):
+
+        # Everything went fine- woohoo!
+        if not self.diagnostics["scoreProblem"]:
+            self.printStatusMessage("DONE- remember CAMs!")
+
+        # If there was some problem loading scores, inform the user.
+        else:
+            self.printStatusMessage("DONE - problem loading scores, SEE XTERM")
+
+    def implementSelectedChanges(self):
+        if self.ui.stopper_cb.isChecked():
+            # Insert stoppers and disable feedback
+            self.DisableFB()
+
+        # Set mirrors immediately so they can start moving as they take
+        # time (will check mirrors at end of calling function using
+        # self.CheckMirrors)
+        if self.mirror["change"] or self.mirror["softSwitch"]:
+            self.SetMirrors()
+
+        self.updateProgress(10)
+
+        # Load scores if user wants
+        if (self.ui.score_cb.isChecked() or self.ui.injector_cb.isChecked()
+                or self.ui.taper_cb.isChecked()):
+            self.LoadScores()
+
+        else:
+            # TODO this doesn't seem to be done in LoadScores...
+            # Add progress to progress bar; this is done in LoadScores but
+            # needs to be done here if no scores are loaded
+            self.updateProgress(35)
+
+        if self.ui.klystron_cb.isChecked():
+            # Set klystron complement
+            self.SetKlys()
+
+        else:
+            # Make up missing progress if klystrons are not set by this GUI
+            self.updateProgress(25)
+
+        if self.ui.fast6x6_cb.isChecked():
+            # Set 6x6 parameters and feedback matrices
+            self.Set6x6()
+            self.updateProgress(5)
+
     def updateProgress(self, increment):
         self.diagnostics["progress"] += increment
         self.ui.progbar.setValue(self.diagnostics["progress"])
@@ -388,57 +400,63 @@ class EnergyChange(QMainWindow):
     def setupUiAndDiagnostics(self):
         # for time logging
         self.timestamp["changeStarted"] = datetime.now()
+
         # Variable to determine if there was some sort of problem loading
         # scores; should be false every time we start a change
         self.diagnostics["scoreProblem"] = False
-        self.ui.textBrowser.append('<i>'
-                                   + str(datetime.now())[11:19] + "-</i> "
-                                   + "<b>Setting values...</b>")
+
+        self.printStatusMessage("<b>Setting values...</b>", False)
+
         # Set to false so that the user will be in initial state after
         # energy change (in case user wants to use again)
         self.diagnostics["valsObtained"] = False
+
         self.ui.startButton.setText("Working...")
         self.ui.statusText.setText("Working...")
+
         QApplication.processEvents()
+
         self.ui.statusText.repaint()
-        self.diagnostics["progress"] = 5
-        self.ui.progbar.setValue(self.diagnostics["progress"])
+        self.updateProgress(5 - self.diagnostics["progress"])
 
     def getValues(self):
-        self.diagnostics["progress"] = 0
+
         self.ui.restoreButton.setDisabled(True)
         self.FormatTime()
-        self.ui.textBrowser.append('<i>'
-                                   + str(datetime.now())[11:19] + "-</i> "
-                                   + "<b>Getting values...</b>")
-        self.updateProgress(5)
-        self.ui.statusText.setText("Getting values...")
+
+        self.printStatusMessage("<b>Getting values...</b>")
+        self.updateProgress(5 - self.diagnostics["progress"])
+
         QApplication.processEvents()
+
         self.ui.statusText.repaint()
         self.GetEnergy()
         self.Get6x6()
         self.GetKlys()
         self.GetGdet()
+
         # Gets random setpoints- feedback setpoints, pulse stacker,
         # laser heater waveplate etc.
         self.GetSetpoints()
+
         self.GetBC2Mover()
         self.GetMirrors()
         self.diagnostics["valsObtained"] = True
+
         energyDiff = (self.electron["energyNow"] - self.electron["energy"])
-        if (self.electron["energyNow"] > self.electron["energy"]
-                and self.ui.stdz_cb.isChecked()
+
+        if (energyDiff > 0 and self.ui.stdz_cb.isChecked()
                 and energyDiff > 0.005):
-            self.ui.textBrowser.append('<i>'
-                                       + str(datetime.now())[11:19]
-                                       + "-</i> "
-                                       + "<b>I will standardize!!!</b>")
+            self.printStatusMessage("<b>I will standardize!!!</b>", False)
+
         self.ui.startButton.setText("Start the change!")
+
         self.ui.statusText.setText("Will switch to "
                                    + str(round(self.photon["energy"], 1))
                                    + "eV ("
                                    + str(round(self.electron["energy"], 2))
                                    + "GeV)")
+
         # We have values and are ready for the energy change;
         # set this flag to True
         self.diagnostics["valsObtained"] = True
@@ -458,8 +476,7 @@ class EnergyChange(QMainWindow):
         # Format user time so it is ready to pass to Archiver
         self.FormatTime()
 
-        self.diagnostics["progress"] = 0
-        self.ui.progbar.setValue(self.diagnostics["progress"])
+        self.updateProgress(-self.diagnostics["progress"])
 
         # Disable restore complement button
         self.ui.restoreButton.setDisabled(True)
@@ -468,43 +485,23 @@ class EnergyChange(QMainWindow):
 
     # Handles user click of complement table in order to juggle stations
     def changeComp(self, row, column):
-        r, c = int(QString.number(row)), int(QString.number(column))
-
-        # index of klystron list; klystron list is a list of 1s and 0s starting
-        # in sector 21 (1 is on beam, 0 is not on beam). This number represents
-        # the index to be used in adjusting self.klystronComplement["desired"],
-        # the master list of the complement for this GUI
-        indexnum = r + (c * 8)
-
-        # Ignore clicks of 24-7 and 24-8
-        if indexnum == 30:
-            return
-
-        # klystron list doesn't have 24-7 and 24-8
-        if indexnum > 30:
-            indexnum -= 1
+        station = row + 1
+        sector = column + 21
 
         try:
-            if self.klystronComplement["desired"][indexnum] == 1:
-                self.klystronComplement["desired"][indexnum] = 0
-                item = QtGui.QTableWidgetItem()
+            klysStatus = self.klystronComplement["desired"][sector][station]
+            item = QtGui.QTableWidgetItem()
 
-                # Want station off, make dark red
+            if klysStatus == 1:
+                self.klystronComplement["desired"][sector][station] = 0
                 brush = QtGui.QBrush(QtGui.QColor(255, 0, 0))
-
-                brush.setStyle(QtCore.Qt.SolidPattern)
-                item.setBackground(brush)
-                self.ui.tableWidget.setItem(row, column, item)
-
-            else:
-                self.klystronComplement["desired"][indexnum] = 1
-                item = QtGui.QTableWidgetItem()
-
-                # Want station on, make light green
+            elif klysStatus == 0:
+                self.klystronComplement["desired"][sector][station] = 1
                 brush = QtGui.QBrush(QtGui.QColor(100, 255, 100))
-                brush.setStyle(QtCore.Qt.SolidPattern)
-                item.setBackground(brush)
-                self.ui.tableWidget.setItem(row, column, item)
+
+            brush.setStyle(QtCore.Qt.SolidPattern)
+            item.setBackground(brush)
+            self.ui.tableWidget.setItem(row, column, item)
 
             self.ui.restoreButton.setDisabled(False)
 
@@ -521,38 +518,23 @@ class EnergyChange(QMainWindow):
         # Set master klystron list to be a copy of the original klystron
         # complement (this variable created in GetKlys function when archived
         # data is retrieved)
-        self.klystronComplement["desired"] = self.klystronComplement[
-                                                 "original"][:]
+        self.klystronComplement["desired"] = \
+            deepcopy(self.klystronComplement["original"])
 
-        row, column = 0, 0
-
-        # Populate klystron complement map
-        for station in self.klystronComplement["desired"]:
-            if station == 1:
+        for sector in xrange(21, 31):
+            for station in xrange(1, 9):
+                klysStatus = self.klystronComplement["desired"][sector][station]
                 item = QtGui.QTableWidgetItem()
 
-                # If station on, make light green
-                brush = QtGui.QBrush(QtGui.QColor(100, 255, 100))
+                if klysStatus == 0:
+                    brush = QtGui.QBrush(QtGui.QColor(255, 0, 0))
+                elif klysStatus == 1:
+                    brush = QtGui.QBrush(QtGui.QColor(100, 255, 100))
 
                 brush.setStyle(QtCore.Qt.SolidPattern)
                 item.setBackground(brush)
-                self.ui.tableWidget.setItem(row, column, item)
+                self.ui.tableWidget.setItem(station - 1, sector - 21, item)
 
-            else:
-                item = QtGui.QTableWidgetItem()
-
-                # If station off, make dark red
-                brush = QtGui.QBrush(QtGui.QColor(255, 0, 0))
-
-                brush.setStyle(QtCore.Qt.SolidPattern)
-                item.setBackground(brush)
-                self.ui.tableWidget.setItem(row, column, item)
-            row += 1
-            if row == 8:
-                row = 0
-                column += 1
-            if column == 3 and row == 6:
-                row = 7
         self.ui.restoreButton.setDisabled(True)
 
     # Function to launch standardize panel
@@ -575,9 +557,11 @@ class EnergyChange(QMainWindow):
     # archiver
     def FormatTime(self):
         chosendate = self.ui.calendarWidget.selectedDate()
+
         chosenday = str(chosendate.day())
         chosenmonth = str(chosendate.month())
         chosenyear = str(chosendate.year())
+
         chosentime = self.ui.timeEdit.time()
         chosenhour = str(chosentime.hour())
 
@@ -623,6 +607,19 @@ class EnergyChange(QMainWindow):
         self.timestamp["archiveStart"] = str(datetime.isoformat(
             self.timestamp["archiveStart"])) + '.000Z'
 
+    def filterScores(self, selectedEnergy, photonColor, electronColor,
+                     delta, fourWeeksBack, end, columnLst):
+        scoreData = self.scoreObject.read_dates(est_energy=selectedEnergy,
+                                                edelta=delta,
+                                                beg_date=fourWeeksBack,
+                                                end_date=end,
+                                                sample_snaps=600,
+                                                columns=columnLst)
+
+        self.ui.PhotonEnergyLabel.setStyleSheet(photonColor)
+        self.ui.ElectronEnergyLabel.setStyleSheet(electronColor)
+        return scoreData
+
     # Get recent score configs and display on gui score table
     def GetScores(self):
         self.ui.scoretable.setDisabled(False)
@@ -633,58 +630,42 @@ class EnergyChange(QMainWindow):
         # Clean slate!
         self.ui.scoretable.clearContents()
 
-        fourweeksback = str(self.timestamp["requested"]
+        fourWeeksBack = str(self.timestamp["requested"]
                             - timedelta(days=28)).split('.')[0]
 
         end = str(self.timestamp["requested"] + timedelta(minutes=1))
         columnLst = ["mod_dte", "config_title", "descr"]
+
         try:
-            if str(self.ui.PhotonEnergyEdit.text()) != '':
+            photonEnergyText = str(self.ui.PhotonEnergyEdit.text())
+            electronEnergyText = str(self.ui.ElectronEnergyEdit.text())
+
+            if photonEnergyText:
                 if int(self.ui.PhotonEnergyEdit.text()) < 350:
                     self.ui.PhotonEnergyEdit.setText('350')
 
-                # TODO intermediate int casting might've been type check?
-                selectedenergy = str(self.ui.PhotonEnergyEdit.text()) + " eV"
+                scoreData = self.filterScores(photonEnergyText + "eV",
+                                              "color: rgb(100,255,100)",
+                                              "color: red", 300, fourWeeksBack,
+                                              end, columnLst)
 
-                scoreData = self.scoreObject.read_dates(
-                    est_energy=selectedenergy, edelta=300,
-                    beg_date=fourweeksback,
-                    end_date=end,
-                    sample_snaps=600,
-                    columns=columnLst)
-
-                self.ui.PhotonEnergyLabel.setStyleSheet(
-                    "color: rgb(100,255,100)")
-                self.ui.ElectronEnergyLabel.setStyleSheet("color: red")
                 self.ui.ElectronEnergyEdit.setText('')
 
-            elif str(self.ui.ElectronEnergyEdit.text()) != '':
-                # TODO intermediate float cast might've been for formatting?
-                selectedenergy = str(self.ui.ElectronEnergyEdit.text()) + " GeV"
-
-                scoreData = self.scoreObject.read_dates(
-                    est_energy=selectedenergy, edelta=0.5,
-                    beg_date=fourweeksback,
-                    end_date=end,
-                    sample_snaps=600,
-                    columns=columnLst)
-
-                self.ui.PhotonEnergyLabel.setStyleSheet("color: red")
-                self.ui.ElectronEnergyLabel.setStyleSheet(
-                    "color: rgb(100,255,100)")
+            elif electronEnergyText:
+                scoreData = self.filterScores(electronEnergyText + "eV",
+                                              "color: red",
+                                              "color: rgb(100,255,100)", 0.5,
+                                              fourWeeksBack, end, columnLst)
 
             else:
-                scoreData = self.scoreObject.read_dates(beg_date=fourweeksback,
-                                                        end_date=end,
-                                                        sample_snaps=600,
-                                                        columns=columnLst)
-                self.ui.PhotonEnergyLabel.setStyleSheet("color: red")
-                self.ui.ElectronEnergyLabel.setStyleSheet("color: red")
+                scoreData = self.filterScores(None, "color: red", "color: red",
+                                              None, fourWeeksBack, end,
+                                              columnLst)
 
         except:
             self.ui.PhotonEnergyEdit.setText('')
             self.ui.ElectronEnergyEdit.setText('')
-            scoreData = self.scoreObject.read_dates(beg_date=fourweeksback,
+            scoreData = self.scoreObject.read_dates(beg_date=fourWeeksBack,
                                                     end_date=end,
                                                     sample_snaps=600,
                                                     columns=columnLst)
@@ -855,195 +836,59 @@ class EnergyChange(QMainWindow):
     # Get klystron complement from time of interest
     def GetKlys(self):
         QApplication.processEvents()
-        self.klystronComplement["desired"] = []
-        for i in range(21, 31):
-            for j in range(1, 9):
-                # Klunky way of skipping 24-7
-                if i == 24 and j == 7:
-                    j += 1
-                KlysVal = self.get_hist('KLYS:LI' + str(i) + ':' + str(j) + '1'
-                                        + ':BEAMCODE1_TCTL',
-                                        self.timestamp["archiveStart"],
-                                        self.timestamp["archiveStop"], 'json')
+        self.klystronComplement["desired"] = {}
+        for sector in xrange(21, 31):
+            stations = {}
+            for station in xrange(1, 9):
+                try:
+                    klysStatus = self.get_hist('KLYS:LI' + str(sector) + ':'
+                                               + str(station) + '1'
+                                               + ':BEAMCODE1_TCTL',
+                                               self.timestamp["archiveStart"],
+                                               self.timestamp["archiveStop"],
+                                               'json')
+                    isOnBeam = self.ValfromJson(klysStatus)
+                    stations[station] = isOnBeam
+                    item = QtGui.QTableWidgetItem()
 
-                self.klystronComplement["desired"].append(
-                    self.ValfromJson(KlysVal))
+                    if isOnBeam:
+                        # If station on, make light green
+                        brush = QtGui.QBrush(QtGui.QColor(100, 255, 100))
+                    else:
+                        brush = QtGui.QBrush(QtGui.QColor(255, 0, 0))
 
-                self.updateProgress(5)
+                    brush.setStyle(QtCore.Qt.SolidPattern)
+                    item.setBackground(brush)
+                    self.ui.tableWidget.setItem(station - 1, sector - 21,  item)
+                except:
+                    stations[station] = None
 
-        # Delete TCAV entry.  Klunky as hell, I know.  But it works me laddy.
-        del self.klystronComplement["desired"][30]
+            self.klystronComplement["desired"][sector] = deepcopy(stations)
+            self.updateProgress(5)
 
         # Copy list to have an 'original' list to revert to if user changes
         # complement and then wants to go back to original
-        self.klystronComplement["original"] = self.klystronComplement[
-                                                  "desired"][:]
-
-        column = 0
-        row = 0
-
-        # Populate klystron complement map to show what will be activated
-        for station in self.klystronComplement["desired"]:
-            if station == 1:
-                item = QtGui.QTableWidgetItem()
-
-                # If station on, make light green
-                brush = QtGui.QBrush(QtGui.QColor(100, 255, 100))
-
-                brush.setStyle(QtCore.Qt.SolidPattern)
-                item.setBackground(brush)
-                self.ui.tableWidget.setItem(row, column, item)
-            else:
-                item = QtGui.QTableWidgetItem()
-
-                # If station off, make dark red
-                brush = QtGui.QBrush(QtGui.QColor(255, 0, 0))
-
-                brush.setStyle(QtCore.Qt.SolidPattern)
-                item.setBackground(brush)
-                self.ui.tableWidget.setItem(row, column, item)
-            row += 1
-            if row == 8:
-                row = 0
-                column += 1
-            if column == 3 and row == 6:
-                row = 7
+        self.klystronComplement["original"] = \
+            deepcopy(self.klystronComplement["desired"])
 
     # Get gas detector pressure PVs and pmt voltages from time of interest
     def GetGdet(self):
         QApplication.processEvents()
         self.updateProgress(5)
         try:
-            self.GD1["Hi"] = self.get_hist('VGBA:FEE1:240:P',
-                                           self.timestamp["archiveStart"],
-                                           self.timestamp["archiveStop"],
-                                           'json')
-
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> " + "GD1 HiRec SetPt:"
-                                       + str(self.ValfromJson(self.GD1["Hi"])))
-
-            self.GD1["Lo"] = self.get_hist('VGBA:FEE1:240:P',
-                                           self.timestamp["archiveStart"],
-                                           self.timestamp["archiveStop"],
-                                           'json')
-
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> " + "GD1 LoRec SetPt:"
-                                       + str(self.ValfromJson(self.GD1["Lo"])))
-
-            self.GD2["Hi"] = self.get_hist('VGBA:FEE1:360:P',
-                                           self.timestamp["archiveStart"],
-                                           self.timestamp["archiveStop"],
-                                           'json')
-
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> " + "GD2 HiRec SetPt:"
-                                       + str(self.ValfromJson(self.GD2["Hi"])))
-
-            self.GD2["Lo"] = self.get_hist('VGBA:FEE1:360:P',
-                                           self.timestamp["archiveStart"],
-                                           self.timestamp["archiveStop"],
-                                           'json')
-
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> " + "GD2 LoRec SetPt:"
-                                       + str(self.ValfromJson(self.GD2["Lo"])))
-
-            self.GD1["PMT1"] = self.get_hist('HVCH:FEE1:241:VoltageSet',
-                                             self.timestamp["archiveStart"],
-                                             self.timestamp["archiveStop"],
-                                             'json')
-
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> " + "GD1 PMT1:"
-                                       + str(
-                self.ValfromJson(self.GD1["PMT1"])))
-
-            self.GD1["PMT2"] = self.get_hist('HVCH:FEE1:242:VoltageSet',
-                                             self.timestamp["archiveStart"],
-                                             self.timestamp["archiveStop"],
-                                             'json')
-
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> " + "GD1 PMT2:"
-                                       + str(
-                self.ValfromJson(self.GD1["PMT2"])))
-
-            self.GD2["PMT1"] = self.get_hist('HVCH:FEE1:361:VoltageSet',
-                                             self.timestamp["archiveStart"],
-                                             self.timestamp["archiveStop"],
-                                             'json')
-
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> " + "GD2 PMT1:"
-                                       + str(
-                self.ValfromJson(self.GD2["PMT1"])))
-
-            self.GD2["PMT2"] = self.get_hist('HVCH:FEE1:362:VoltageSet',
-                                             self.timestamp["archiveStart"],
-                                             self.timestamp["archiveStop"],
-                                             'json')
-
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> " + "GD2 PMT2:"
-                                       + str(
-                self.ValfromJson(self.GD2["PMT2"])))
+            self.getPressureSetpoints()
 
             self.updateProgress(5)
 
-            self.gdetCalibration[241] = self.get_hist('GDET:FEE1:241:CALI',
-                                                      self.timestamp[
-                                                          "archiveStart"],
-                                                      self.timestamp[
-                                                          "archiveStop"],
-                                                      'json')
-
-            self.gdetOffset[241] = self.get_hist('GDET:FEE1:241:OFFS',
-                                                 self.timestamp["archiveStart"],
-                                                 self.timestamp["archiveStop"],
-                                                 'json')
-
-            self.gdetCalibration[242] = self.get_hist('GDET:FEE1:242:CALI',
-                                                      self.timestamp[
-                                                          "archiveStart"],
-                                                      self.timestamp[
-                                                          "archiveStop"],
-                                                      'json')
-
-            self.gdetOffset[242] = self.get_hist('GDET:FEE1:242:OFFS',
-                                                 self.timestamp["archiveStart"],
-                                                 self.timestamp["archiveStop"],
-                                                 'json')
-
-            self.gdetCalibration[361] = self.get_hist('GDET:FEE1:361:CALI',
-                                                      self.timestamp[
-                                                          "archiveStart"],
-                                                      self.timestamp[
-                                                          "archiveStop"],
-                                                      'json')
-
-            self.gdetOffset[361] = self.get_hist('GDET:FEE1:361:OFFS',
-                                                 self.timestamp["archiveStart"],
-                                                 self.timestamp["archiveStop"],
-                                                 'json')
-
-            self.gdetCalibration[362] = self.get_hist('GDET:FEE1:362:CALI',
-                                                      self.timestamp[
-                                                          "archiveStart"],
-                                                      self.timestamp[
-                                                          "archiveStop"],
-                                                      'json')
-
-            self.gdetOffset[362] = self.get_hist('GDET:FEE1:362:OFFS',
-                                                 self.timestamp["archiveStart"],
-                                                 self.timestamp["archiveStop"],
-                                                 'json')
+            for PMT in ["241", "242", "361", "362"]:
+                self.getHistFromArchiveTime('GDET:FEE1:' + PMT + ':CALI',
+                                            "calibration" + PMT)
+                self.getHistFromArchiveTime('GDET:FEE1:' + PMT + ':OFFS',
+                                            "offset" + PMT)
 
             self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
                                        + "-</i> "
                                        + "Got PMT calibration/offset values")
-
             self.updateProgress(5)
             self.ui.pressure_cb.setDisabled(False)
             self.ui.recipe_cb.setDisabled(False)
@@ -1069,6 +914,29 @@ class EnergyChange(QMainWindow):
             self.ui.pmt_cb.setChecked(False)
             self.ui.pmt_cb.setDisabled(True)
             self.updateProgress(10)
+
+    def getHistFromArchiveTime(self, pv, setpoint):
+        hist = self.get_hist(pv, self.timestamp["archiveStart"],
+                             self.timestamp["archiveStop"], 'json')
+        self.gdetData[setpoint] = hist
+        return hist
+
+    def getPressureSetpoints(self):
+
+        def getAndLogPressure(pv, setpoint):
+            hist = self.getHistFromArchiveTime(pv, setpoint)
+            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
+                                       + "-</i> " + setpoint
+                                       + str(self.ValfromJson(hist)))
+
+        getAndLogPressure('VGBA:FEE1:240:P', "GD1PressureHi")
+        getAndLogPressure('VGBA:FEE1:240:P', "GD1PressureLo")
+        getAndLogPressure('VGBA:FEE1:360:P', "GD2PressureHi")
+        getAndLogPressure('VGBA:FEE1:360:P', "GD2PressureLo")
+
+        for PMT in ["241", "242", "361", "362"]:
+            getAndLogPressure('HVCH:FEE1:' + PMT + ':VoltageSet',
+                              "voltagePMT" + PMT)
 
     # Random setpoints we also want to load.  Grab them from archive appliance
     def GetSetpoints(self):
@@ -1426,8 +1294,7 @@ class EnergyChange(QMainWindow):
 
         # Put message in message log that scores are being loaded
         log("facility=pythonenergychange Loading SCORE from "
-            + self.scoreInfo["dateChosen"] + " " + self.scoreInfo[
-                "timeChosen"]
+            + self.scoreInfo["dateChosen"] + " " + self.scoreInfo["timeChosen"]
             + " for regions " + ", ".join(regionlist))
 
         for region in regionlist:
@@ -1474,7 +1341,7 @@ class EnergyChange(QMainWindow):
     # Thread function for loading each individual score region
     def ScoreThread(self, region):
         # TODO I can change this to a method call, but I have no idea what the
-        # status should be
+        # status should be IT CAN BE WHATEVER I WANT
         command = ('/usr/local/lcls/tools/python/toolbox/echg/'
                    'score_load_oracle.py ' + region + ' '
                    + self.scoreInfo["dateChosen"] + ' '
@@ -1534,31 +1401,16 @@ class EnergyChange(QMainWindow):
     # changes)
     def SetKlys(self):
         QApplication.processEvents()
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + 'Imma do the klystron complement')
-        i = 0
+        self.printStatusMessage('Imma do the klystron complement')
 
-        # TODO I KNOW this can be cleaned up somehow
-        for sect in xrange(21, 31):
-            if sect == 24:
-                for j in [1, 2, 3, 4, 5, 6, 8]:
-                    caput('KLYS:LI' + str(sect) + ':' + str(j) + '1'
-                          + ':BEAMCODE1_TCTL',
-                          self.klystronComplement["desired"][i])
-                    # Set PAC trigger for 24-1,24-2,24-3
-                    if j in [1, 2, 3]:
-                        if caget('KLYS:LI24:' + str(j) + '1:HSTAMODESET') == 0:
-                            caput('ACCL:LI24:' + str(j) + '00:KLY_C_1_TCTL',
-                                  self.klystronComplement["desired"][i])
-                    i += 1
-            else:
-                for j in xrange(1, 9):
-                    caput('KLYS:LI' + str(sect) + ':' + str(j) + '1'
-                          + ':BEAMCODE1_TCTL',
-                          self.klystronComplement["desired"][i])
-                    i += 1
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + 'Done messing with klystrons')
+        for sector in xrange(21, 31):
+            for station in xrange(1, 9):
+                klysStatus = self.klystronComplement["desired"][sector][station]
+                if klysStatus is not None:
+                    caput('KLYS:LI' + str(sector) + ':' + str(station) + '1'
+                          + ':BEAMCODE1_TCTL', klysStatus)
+
+        self.printStatusMessage('Done messing with klystrons')
         self.updateProgress(25)
 
     # Sets 6x6 feedback and also loads matrices for LTU(fast only; slow not in
@@ -1970,37 +1822,68 @@ class EnergyChange(QMainWindow):
 
     # Set gas detector recipe/pressure and pmt voltages
     def SetGdet(self):
+        def caputGdetData(pv, key):
+            caput(pv, self.ValfromJson(self.gdetData[key]))
+
         if self.ui.pmt_cb.isChecked():
             self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
                                        + "-</i> "
                                        + 'Setting PMT voltages/Calibration/'
                                          'Offset')
             QApplication.processEvents()
-            caput('HVCH:FEE1:241:VoltageSet',
-                  self.ValfromJson(self.GD1["PMT1"]))
-            caput('HVCH:FEE1:242:VoltageSet',
-                  self.ValfromJson(self.GD1["PMT2"]))
-            caput('HVCH:FEE1:361:VoltageSet',
-                  self.ValfromJson(self.GD2["PMT1"]))
-            caput('HVCH:FEE1:362:VoltageSet',
-                  self.ValfromJson(self.GD2["PMT2"]))
-            caput('GDET:FEE1:241:CALI',
-                  self.ValfromJson(self.gdetCalibration[241]))
-            caput('GDET:FEE1:242:CALI',
-                  self.ValfromJson(self.gdetCalibration[242]))
-            caput('GDET:FEE1:361:CALI',
-                  self.ValfromJson(self.gdetCalibration[361]))
-            caput('GDET:FEE1:362:CALI',
-                  self.ValfromJson(self.gdetCalibration[362]))
-            caput('GDET:FEE1:241:OFFS', self.ValfromJson(self.gdetOffset[241]))
-            caput('GDET:FEE1:242:OFFS', self.ValfromJson(self.gdetOffset[242]))
-            caput('GDET:FEE1:361:OFFS', self.ValfromJson(self.gdetOffset[361]))
-            caput('GDET:FEE1:362:OFFS', self.ValfromJson(self.gdetOffset[362]))
+
+            for PMT in ["241", "242", "361", "362"]:
+                caputGdetData('HVCH:FEE1:' + PMT + ':VoltageSet',
+                              "voltagePMT" + PMT)
+
+                caputGdetData('GDET:FEE1:' + PMT + ':CALI',
+                              "calibrationPMT" + PMT)
+
+                caputGdetData('GDET:FEE1:' + PMT + ':OFFS', "offsetPMT" + PMT)
 
             self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
                                        + "-</i> "
                                        + 'Set PMT voltages/Calibration/Offset')
 
+        self.setPressuresForHardMirrorChange()
+        self.setPressuresForSoftMirrorChange()
+
+        # No recipe change needed, not switching between hard/soft xrays
+        if not self.mirror["change"]:
+            if self.ui.pressure_cb.isChecked():
+                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
+                                           + "-</i> " + 'Setting pressures')
+                QApplication.processEvents()
+                caputGdetData('VFC:FEE1:GD01:PLO_DES', "GD1PressureLo")
+                caputGdetData('VFC:FEE1:GD02:PLO_DES', "GD2PressureLo")
+                caputGdetData('VFC:FEE1:GD01:PHI_DES', "GD1PressureHi")
+                caputGdetData('VFC:FEE1:GD02:PHI_DES', "GD2PressureHi")
+
+    def setPressuresForSoftMirrorChange(self):
+        # Mirror change to soft setting
+        if self.mirror["change"] and self.mirror["soft"]:
+            if self.ui.recipe_cb.isChecked():
+                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
+                                           + "-</i> "
+                                           + 'Changing recipe from high to low')
+                QApplication.processEvents()
+                caput('VFC:FEE1:GD01:PHI_DES', '0')
+                caput('VFC:FEE1:GD02:PHI_DES', '0')
+                sleep(14)
+                caput('VFC:FEE1:GD01:RECIPE_DES', '4')
+                caput('VFC:FEE1:GD02:RECIPE_DES', '4')
+                sleep(1.5)
+
+            if self.ui.pressure_cb.isChecked():
+                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
+                                           + "-</i> " + 'Setting pressures')
+                QApplication.processEvents()
+                caput('VFC:FEE1:GD01:PLO_DES',
+                      self.ValfromJson(self.gdetData["GD1PressureLo"]))
+                caput('VFC:FEE1:GD02:PLO_DES',
+                      self.ValfromJson(self.gdetData["GD2PressureLo"]))
+
+    def setPressuresForHardMirrorChange(self):
         # Mirror change required, and changing to hard xray setting; or somehow
         # are running hard xrays with low recipe (has happened and then OPS
         # thinks there is no FEL)
@@ -2023,40 +1906,10 @@ class EnergyChange(QMainWindow):
                 QApplication.processEvents()
                 caput('VFC:FEE1:GD01:PLO_DES', 0.0)
                 caput('VFC:FEE1:GD02:PLO_DES', 0.0)
-                caput('VFC:FEE1:GD01:PHI_DES', self.ValfromJson(self.GD1["Hi"]))
-                caput('VFC:FEE1:GD02:PHI_DES', self.ValfromJson(self.GD2["Hi"]))
-
-        # Mirror change to soft setting
-        if self.mirror["change"] and self.mirror["soft"]:
-            if self.ui.recipe_cb.isChecked():
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> "
-                                           + 'Changing recipe from high to low')
-                QApplication.processEvents()
-                caput('VFC:FEE1:GD01:PHI_DES', '0')
-                caput('VFC:FEE1:GD02:PHI_DES', '0')
-                sleep(14)
-                caput('VFC:FEE1:GD01:RECIPE_DES', '4')
-                caput('VFC:FEE1:GD02:RECIPE_DES', '4')
-                sleep(1.5)
-
-            if self.ui.pressure_cb.isChecked():
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> " + 'Setting pressures')
-                QApplication.processEvents()
-                caput('VFC:FEE1:GD01:PLO_DES', self.ValfromJson(self.GD1["Lo"]))
-                caput('VFC:FEE1:GD02:PLO_DES', self.ValfromJson(self.GD2["Lo"]))
-
-        # No recipe change needed, not switching between hard/soft xrays
-        if not self.mirror["change"]:
-            if self.ui.pressure_cb.isChecked():
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> " + 'Setting pressures')
-                QApplication.processEvents()
-                caput('VFC:FEE1:GD01:PLO_DES', self.ValfromJson(self.GD1["Lo"]))
-                caput('VFC:FEE1:GD02:PLO_DES', self.ValfromJson(self.GD2["Lo"]))
-                caput('VFC:FEE1:GD01:PHI_DES', self.ValfromJson(self.GD1["Hi"]))
-                caput('VFC:FEE1:GD02:PHI_DES', self.ValfromJson(self.GD2["Hi"]))
+                caput('VFC:FEE1:GD01:PHI_DES',
+                      self.ValfromJson(self.gdetData["GD1PressureHi"]))
+                caput('VFC:FEE1:GD02:PHI_DES',
+                      self.ValfromJson(self.gdetData["GD2PressureHi"]))
 
     # Ripped off from Lauren Alsberg, thanks yo!
     def get_hist(self, pv, timeStart, timeStop, *moreArgs):
@@ -2096,6 +1949,10 @@ class ThreadWithReturnValue(Thread):
 def main():
     app = QApplication(argv)
     window = EnergyChange()
+
+    # Close the SCORE connection
+    app.aboutToQuit.connect(window.scoreObject.exit_score)
+
     window.show()
     exit(app.exec_())
 
