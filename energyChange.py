@@ -1,6 +1,5 @@
 #!/usr/local/lcls/package/python/current/bin/python
-# Author- Zimmer (Lil CZ)
-# Editor - Lisa
+# Author- Zimmer (Lil CZ), Editor - Lisa
 # Loads scores; changes GDET Pressures, Recipes, PMT Voltages, Calibrations,
 # Offsets; 6x6 stuff (including BC1 Peak Current); XCAV and Und Launch feedback
 # setpoints; Laser Heater Waveplate; klystron complement; BC2 chicane mover;
@@ -16,7 +15,7 @@ from PyQt4 import QtCore, QtGui
 from time import sleep
 from datetime import datetime, timedelta
 from dateutil import parser
-from subprocess import Popen, PIPE
+from subprocess import Popen
 # noinspection PyCompatibility
 from urllib2 import urlopen
 from json import load
@@ -26,9 +25,12 @@ from message import log
 from random import randint
 from pyScore import Pyscore
 from copy import deepcopy
+from loadScore import setDevices
+from loadMatrices import setMatricesAndRestartFeedbacks
 
 from energyChange_UI import echg_UI
 
+ENERGY_BOUNDARY = 2050
 
 # Where the magic happens, the main class that runs this baby!
 # noinspection PyCompatibility,PyArgumentList,PyTypeChecker
@@ -38,6 +40,8 @@ class EnergyChange(QMainWindow):
         self.cssfile = "/usr/local/lcls/tools/python/toolbox/echg/style.css"
         self.ui = echg_UI()
         self.ui.setupUi(self)
+        self.ui.scoretable.setSelectionMode(QtGui.QAbstractItemView
+                                            .SingleSelection)
         self.setWindowTitle('Energy Change!')
 
         # Blank out 24-7 with 3 lines on klystron complement table (it doesn't
@@ -120,52 +124,51 @@ class EnergyChange(QMainWindow):
 
         self.ui.statusText.setText(greetings[randint(0, 45)])
         self.loadStyleSheet()
-        
-        self.gdetData = {"GD1PressureHi": None, "GD1PressureLo": None, 
-                         "voltagePMT241": None, "voltagePMT242": None, 
+
+        self.setpoint = {"GD1PressureHi": None, "GD1PressureLo": None,
+                         "voltagePMT241": None, "voltagePMT242": None,
                          "GD2PressureHi": None, "GD2PressureLo": None,
                          "voltagePMT361": None, "voltagePMT362": None,
-                         "calibrationPMT241": None, "calibrationPMT242": None, 
+                         "calibrationPMT241": None, "calibrationPMT242": None,
                          "calibrationPMT361": None, "calibrationPMT362": None,
-                         "offsetPMT241": None, "offsetPMT242": None, 
-                         "offsetPMT361": None, "offsetPMT362": None}
-
-        self.BC1 = {"current": None, "leftJaw": None, "rightJaw": None}
-        self.BC2 = {"mover": None, "phase": None}
+                         "offsetPMT241": None, "offsetPMT242": None,
+                         "offsetPMT361": None, "offsetPMT362": None,
+                         "electronEnergyDesired": None,
+                         "electronEnergyNow": None,
+                         "photonEnergyDesired": None, "photonEnergyNow": None,
+                         "xcavLaunchX": None, "xcavLaunchY": None,
+                         "BC1PeakCurrent": None, "BC1LeftJaw": None,
+                         "BC1RightJaw": None, "BC2Mover": None,
+                         "BC2Phase": None, "amplitudeL1X": None,
+                         "phaseL1X": None, "amplitudeL2": None,
+                         "peakCurrentL2": None, "phaseL2": None,
+                         "energyL3": None, "phaseL3": None,
+                         "waveplateCH1": None, "heaterWaveplate1": None,
+                         "heaterWaveplate2": None, "waveplateVHC": None,
+                         "pulseStackerDelay": None,
+                         "pulseStackerWaveplate": None, "undLaunchPosX": None,
+                         "undLaunchPosY": None, "undLaunchAngX": None,
+                         "undLaunchAngY": None, "vernier": None}
 
         self.scoreInfo = {"comments": None, "titles": None, "times": None,
                           "dateChosen": None, "timeChosen": None}
 
-        self.electron = {"energy": None, "energyNow": None}
-        self.photon = {"energy": None, "energyNow": None}
-
         self.klystronComplement = {"desired": {}, "original": {}}
 
-        self.L1X = {"amplitude": None, "phase": None}
-        self.L2 = {"amplitude": None, "peakCurrent": None, "phase": None}
-        self.L3 = {"energy": None, "phase": None}
-
-        self.laser = {"CH1WP": None, "LHWP1": None, "LHWP2": None,
-                      "VHCWP": None, "pulseStackerDelay": None,
-                      "pulseStackerWP": None}
-
-        self.mirror = {"change": False, "hard": False, "soft": False,
-                       "softSwitch": False, "AMO": False, "SXR": False}
+        self.mirror = {"needToChangeM1": False, "hardPositionNeeded": False, 
+                       "softPositionNeeded": False,
+                       "needToChangeM3": False, "amoPositionNeeded": False,
+                       "sxrPositionNeeded": False}
 
         self.timestamp = {"requested": None, "archiveStart": None,
                           "archiveStop": None, "changeStarted": None}
-
-        self.undLaunch = {"xPos": None, "xAng": None, "yPos": None,
-                          "yAng": None}
 
         # valsObtained is boolean representing whether user has obtained archive
         # data for selected time.  Scoreproblem is boolean representing if
         # there was a problem loading some BDES.  Abort isn't used!?!?
         # progress keeps track of progress number (between 0 and 100)
         self.diagnostics = {"progress": 0, "valsObtained": False,
-                            "scoreProblem": False}
-
-        self.xcav = {"x": None, "y": None}
+                            "scoreProblem": False, "threads": []}
 
         # Set progress bar to zero on GUI opening
         self.ui.progbar.setValue(0)
@@ -261,6 +264,7 @@ class EnergyChange(QMainWindow):
             return self.getValues()
 
         else:
+            return
             self.changeEnergy()
 
     ########################################################################
@@ -268,6 +272,7 @@ class EnergyChange(QMainWindow):
     # actual change).
     ########################################################################
     def changeEnergy(self):
+        return
 
         self.setupUiAndDiagnostics()
         self.implementSelectedChanges()
@@ -284,7 +289,7 @@ class EnergyChange(QMainWindow):
 
         self.checkAndStandardize()
 
-        if self.mirror["change"] or self.mirror["softSwitch"]:
+        if self.mirror["needToChangeM1"] or self.mirror["needToChangeM3"]:
             # Check to make sure that mirror gets to where it should
             self.CheckMirrors()
 
@@ -294,7 +299,13 @@ class EnergyChange(QMainWindow):
         # change!
         self.ui.startButton.setText("Get Values")
 
-        self.printStatus()
+        # Everything went fine- woohoo!
+        if not self.diagnostics["scoreProblem"]:
+            self.printStatusMessage("DONE- remember CAMs!")
+
+        # If there was some problem loading scores, inform the user.
+        else:
+            self.printStatusMessage("DONE - problem loading scores, SEE XTERM")
 
         self.logTime()
 
@@ -303,7 +314,8 @@ class EnergyChange(QMainWindow):
             # TODO why is this relevant information?
             # sometimes archive appliance returns ridiculous # of digits-
             # i.e. 3.440000000000000013 instead of 3.44
-            energyDiff = self.electron["energyNow"] - self.electron["energy"]
+            energyDiff = (self.setpoint["electronEnergyNow"]
+                          - self.setpoint["electronEnergyDesired"])
 
             if energyDiff > 0.005 and not self.diagnostics["scoreProblem"]:
                 # Standardize magnets if going down in energy and there
@@ -346,16 +358,6 @@ class EnergyChange(QMainWindow):
         if printToStatus:
             self.ui.statusText.setText(message)
 
-    def printStatus(self):
-
-        # Everything went fine- woohoo!
-        if not self.diagnostics["scoreProblem"]:
-            self.printStatusMessage("DONE- remember CAMs!")
-
-        # If there was some problem loading scores, inform the user.
-        else:
-            self.printStatusMessage("DONE - problem loading scores, SEE XTERM")
-
     def implementSelectedChanges(self):
         if self.ui.stopper_cb.isChecked():
             # Insert stoppers and disable feedback
@@ -364,7 +366,7 @@ class EnergyChange(QMainWindow):
         # Set mirrors immediately so they can start moving as they take
         # time (will check mirrors at end of calling function using
         # self.CheckMirrors)
-        if self.mirror["change"] or self.mirror["softSwitch"]:
+        if self.mirror["needToChangeM1"] or self.mirror["needToChangeM3"]:
             self.SetMirrors()
 
         self.updateProgress(10)
@@ -443,7 +445,8 @@ class EnergyChange(QMainWindow):
         self.GetMirrors()
         self.diagnostics["valsObtained"] = True
 
-        energyDiff = (self.electron["energyNow"] - self.electron["energy"])
+        energyDiff = (self.setpoint["electronEnergyNow"]
+                      - self.setpoint["electronEnergyDesired"])
 
         if (energyDiff > 0 and self.ui.stdz_cb.isChecked()
                 and energyDiff > 0.005):
@@ -451,11 +454,13 @@ class EnergyChange(QMainWindow):
 
         self.ui.startButton.setText("Start the change!")
 
-        self.ui.statusText.setText("Will switch to "
-                                   + str(round(self.photon["energy"], 1))
-                                   + "eV ("
-                                   + str(round(self.electron["energy"], 2))
-                                   + "GeV)")
+        message = ("Will switch to "
+                   + str(round(self.setpoint["photonEnergyDesired"], 1))
+                   + "eV ("
+                   + str(round(self.setpoint["electronEnergyDesired"], 2))
+                   + "GeV)")
+
+        self.ui.statusText.setText(message)
 
         # We have values and are ready for the energy change;
         # set this flag to True
@@ -509,6 +514,7 @@ class EnergyChange(QMainWindow):
         # self.klystronComplement["desired"] doesn't yet exist so just ignore
         # this error
         except AttributeError:
+            print "Error changing " + str(sector) + "-" + str(station)
             pass
 
     # Restores original complement (the displayed complement to load will be
@@ -556,28 +562,22 @@ class EnergyChange(QMainWindow):
     # Take date/time from GUI and put it into format suitable for passing to
     # archiver
     def FormatTime(self):
+        # Add zeroes to keep formatting consistent (i.e. 0135 for time
+        # instead of 135)
+        def reformat(val):
+            return '0' + val if len(val) == 1 else val
+
         chosendate = self.ui.calendarWidget.selectedDate()
 
-        chosenday = str(chosendate.day())
-        chosenmonth = str(chosendate.month())
+        chosenday = reformat(str(chosendate.day()))
+        chosenmonth = reformat(str(chosendate.month()))
         chosenyear = str(chosendate.year())
 
         chosentime = self.ui.timeEdit.time()
-        chosenhour = str(chosentime.hour())
+        chosenhour = reformat(str(chosentime.hour()))
 
         # Get selected date/time from GUI
-        chosenminute = str(chosentime.minute())
-
-        # Add zeroes to keep formatting consistent (i.e. 0135 for time
-        # instead of 135)
-        if len(str(chosenhour)) == 1:
-            chosenhour = '0' + chosenhour
-        if len(str(chosenminute)) == 1:
-            chosenminute = '0' + chosenminute
-        if len(str(chosenmonth)) == 1:
-            chosenmonth = '0' + chosenmonth
-        if len(str(chosenday)) == 1:
-            chosenday = '0' + chosenday
+        chosenminute = reformat(str(chosentime.minute()))
 
         userchoice = (chosenyear + '-' + chosenmonth + '-' + chosenday + ' '
                       + chosenhour + ':' + chosenminute + ':00')
@@ -609,6 +609,7 @@ class EnergyChange(QMainWindow):
 
     def filterScores(self, selectedEnergy, photonColor, electronColor,
                      delta, fourWeeksBack, end, columnLst):
+
         scoreData = self.scoreObject.read_dates(est_energy=selectedEnergy,
                                                 edelta=delta,
                                                 beg_date=fourWeeksBack,
@@ -650,8 +651,6 @@ class EnergyChange(QMainWindow):
                                               "color: red", 300, fourWeeksBack,
                                               end, columnLst)
 
-                self.ui.ElectronEnergyEdit.setText('')
-
             elif electronEnergyText:
                 scoreData = self.filterScores(float(electronEnergyText),
                                               "color: red",
@@ -664,6 +663,7 @@ class EnergyChange(QMainWindow):
                                               columnLst)
 
         except:
+            print "Unable to filter SCORE's"
             self.ui.PhotonEnergyEdit.setText('')
             self.ui.ElectronEnergyEdit.setText('')
             scoreData = self.scoreObject.read_dates(beg_date=fourWeeksBack,
@@ -684,18 +684,18 @@ class EnergyChange(QMainWindow):
                     self.scoreInfo["titles"])):
             self.ScoreTableProblem()
 
+    def addScoreTableItem(self, txt, row, column):
+        item = QtGui.QTableWidgetItem()
+        item.setText(txt)
+        self.ui.scoretable.setItem(row, column, item)
+
     def PopulateScoreTable(self):
-        for i in xrange(0, len(self.scoreInfo["times"])):
+
+        for idx, time in enumerate(self.scoreInfo["times"]):
             try:
-                item = QtGui.QTableWidgetItem()
-                item.setText(str(self.scoreInfo["times"][i]))
-                self.ui.scoretable.setItem(i, 0, item)
-                item = QtGui.QTableWidgetItem()
-                item.setText(self.scoreInfo["comments"][i])
-                self.ui.scoretable.setItem(i, 1, item)
-                item = QtGui.QTableWidgetItem()
-                item.setText(self.scoreInfo["titles"][i])
-                self.ui.scoretable.setItem(i, 2, item)
+                self.addScoreTableItem(str(time), idx, 0)
+                self.addScoreTableItem(self.scoreInfo["comments"][idx], idx, 1)
+                self.addScoreTableItem(self.scoreInfo["titles"][idx], idx, 2)
 
             # A safety if there is some mismatch among titles/comments/times
             # returned from score API and processed by this GUI (e.g. not the
@@ -706,135 +706,70 @@ class EnergyChange(QMainWindow):
     # Notify user that reading database had problem; set time/date manually
     def ScoreTableProblem(self):
         self.ui.scoretable.clearContents()
-        item = QtGui.QTableWidgetItem()
-        item.setText('Problem reading scores.')
-        self.ui.scoretable.setItem(0, 0, item)
-        item = QtGui.QTableWidgetItem()
-        item.setText('Set date/time manually!')
-        self.ui.scoretable.setItem(0, 1, item)
+
+        self.addScoreTableItem('Problem reading scores.', 0, 0)
+        self.addScoreTableItem('Set date/time manually!', 0, 1)
 
     # Pull time from score config that was clicked and set gui date/time
     def setScoreTime(self):
         self.ui.scoretable.repaint()
         QApplication.processEvents()
-        rows = sorted(set(index.row()
-                          for index
-                          in self.ui.scoretable.selectedIndexes()))
 
-        if len(rows) == 0:
-            return
-
-        if len(rows) > 1:
-            self.ui.statusText.setText("Select one row only dummy!")
-
-        r = rows[0]
         try:
-            time = self.scoreInfo["times"][r]
+            row = self.ui.scoretable.selectedIndexes()[0].row()
+            time = self.scoreInfo["times"][row]
+            # Split string into date and time
+            time = str(time).split()
+            date = time[0].split('-')
+
+            year = str(date[0])
+            month = str(date[1])
+            day = str(date[2])
+
+            calendaradj = QDate(int(year), int(month), int(day))
+
+            self.ui.calendarWidget.setSelectedDate(calendaradj)
+            self.ui.timeEdit.setTime(QTime(int(time[1][:2]), int(time[1][3:5])))
 
         # User clicked a blank cell, stop here
         except IndexError:
-            return
-
-        # Split string into date and time
-        time = str(time).split()
-        year = str(time[0].split('-')[0])
-        month = str(time[0].split('-')[1])
-        day = str(time[0].split('-')[2])
-        calendaradj = QDate(int(year), int(month), int(day))
-        self.ui.calendarWidget.setSelectedDate(calendaradj)
-        self.ui.timeEdit.setTime(QTime(int(time[1][:2]), int(time[1][3:5])))
+            self.ui.statusText.setText("Error reading selected SCORE")
 
     # give a simple number back from json data
     @staticmethod
-    def ValfromJson(datatotranslate):
+    def valFromJson(datatotranslate):
         return datatotranslate[0][u'data'][-1][u'val']
 
     # Get current/desired electron and photon energies
     def GetEnergy(self):
-        self.photon["energyNow"] = caget('SIOC:SYS0:ML00:AO627')
+        self.setpoint["photonEnergyNow"] = caget('SIOC:SYS0:ML00:AO627')
+        self.getAndLogHistory('SIOC:SYS0:ML00:AO627', 'photonEnergyDesired')
 
-        self.photon["energy"] = self.get_hist('SIOC:SYS0:ML00:AO627',
-                                              self.timestamp["archiveStart"],
-                                              self.timestamp["archiveStop"],
-                                              'json')
+        self.setpoint["electronEnergyNow"] = caget('BEND:DMP1:400:BDES')
+        self.getAndLogHistory('BEND:DMP1:400:BDES', 'electronEnergyDesired')
 
-        self.photon["energy"] = self.ValfromJson(self.photon["energy"])
-        self.electron["energyNow"] = caget('BEND:DMP1:400:BDES')
-
-        self.electron["energy"] = self.get_hist('BEND:DMP1:400:BDES',
-                                                self.timestamp["archiveStart"],
-                                                self.timestamp["archiveStop"],
-                                                'json')
-
-        self.electron["energy"] = self.ValfromJson(self.electron["energy"])
         self.updateProgress(10)
 
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "Current Electron Energy:"
-                                   + str(self.electron["energyNow"]))
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "Current Photon Energy:"
-                                   + str(self.photon["energyNow"]))
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "Desired Electron Energy"
-                                   + str(self.electron["energy"]))
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "Desired Photon Energy:"
-                                   + str(self.photon["energy"]))
+        self.printStatusMessage("Current Electron Energy:"
+                                + str(self.setpoint["electronEnergyNow"]))
+        self.printStatusMessage("Current Photon Energy:"
+                                + str(self.setpoint["photonEnergyNow"]))
 
     # Get important 6x6 parameters from time of interest
     def Get6x6(self):
         QApplication.processEvents()
-        self.BC1["current"] = self.get_hist('FBCK:FB04:LG01:S3DES',
-                                            self.timestamp["archiveStart"],
-                                            self.timestamp["archiveStop"],
-                                            'json')
 
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "BC1 IPk:"
-                                   + str(self.ValfromJson(self.BC1["current"])))
+        self.getAndLogHistory('FBCK:FB04:LG01:S3DES', "BC1PeakCurrent")
+        self.getAndLogHistory('ACCL:LI22:1:ADES', "amplitudeL2")
+        self.getAndLogHistory('ACCL:LI22:1:PDES', "phaseL2")
+        self.getAndLogHistory('FBCK:FB04:LG01:S5DES', "peakCurrentL2")
+        self.getAndLogHistory('ACCL:LI25:1:ADES', "energyL3")
 
-        self.L2["amplitude"] = self.get_hist('ACCL:LI22:1:ADES',
-                                             self.timestamp["archiveStart"],
-                                             self.timestamp["archiveStop"],
-                                             'json')
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "L2 Ampl:"
-                                   + str(
-            self.ValfromJson(self.L2["amplitude"])))
-
-        self.L2["phase"] = self.get_hist('ACCL:LI22:1:PDES',
-                                         self.timestamp["archiveStart"],
-                                         self.timestamp["archiveStop"], 'json')
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "L2 Phase:"
-                                   + str(self.ValfromJson(self.L2["phase"])))
-
-        self.L2["peakCurrent"] = self.get_hist('FBCK:FB04:LG01:S5DES',
-                                               self.timestamp["archiveStart"],
-                                               self.timestamp["archiveStop"],
-                                               'json')
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "L2 IPk:"
-                                   + str(
-            self.ValfromJson(self.L2["peakCurrent"])))
-
-        self.L3["energy"] = self.get_hist('ACCL:LI25:1:ADES',
-                                          self.timestamp["archiveStart"],
-                                          self.timestamp["archiveStop"], 'json')
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "L3 Energy:"
-                                   + str(self.ValfromJson(self.L3["energy"])))
         self.updateProgress(10)
 
     # Get klystron complement from time of interest
+    # TODO figure out full complement PV
+    # CUDKLYS:MCC0:ONBC1SUMY
     def GetKlys(self):
         QApplication.processEvents()
         self.klystronComplement["desired"] = {}
@@ -848,7 +783,7 @@ class EnergyChange(QMainWindow):
                                                self.timestamp["archiveStart"],
                                                self.timestamp["archiveStop"],
                                                'json')
-                    isOnBeam = self.ValfromJson(klysStatus)
+                    isOnBeam = self.valFromJson(klysStatus)
                     stations[station] = isOnBeam
                     item = QtGui.QTableWidgetItem()
 
@@ -860,7 +795,7 @@ class EnergyChange(QMainWindow):
 
                     brush.setStyle(QtCore.Qt.SolidPattern)
                     item.setBackground(brush)
-                    self.ui.tableWidget.setItem(station - 1, sector - 21,  item)
+                    self.ui.tableWidget.setItem(station - 1, sector - 21, item)
                 except:
                     stations[station] = None
 
@@ -882,10 +817,10 @@ class EnergyChange(QMainWindow):
             self.updateProgress(5)
 
             for PMT in ["241", "242", "361", "362"]:
-                self.getHistFromArchiveTime('GDET:FEE1:' + PMT + ':CALI',
-                                            "calibration" + PMT)
-                self.getHistFromArchiveTime('GDET:FEE1:' + PMT + ':OFFS',
-                                            "offset" + PMT)
+                self.getAndLogHistory('GDET:FEE1:' + PMT + ':CALI',
+                                      "calibration" + PMT)
+                self.getAndLogHistory('GDET:FEE1:' + PMT + ':OFFS',
+                                      "offset" + PMT)
 
             self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
                                        + "-</i> "
@@ -898,15 +833,15 @@ class EnergyChange(QMainWindow):
         except:
             # Sometimes have trouble getting gas detector stuff due to channel
             # archiver on photon side
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> "
-                                       + "Problem retrieving gas detector PVs; "
-                                         "will not change pressures/recipe/"
-                                         "voltages/calibration/offset")
 
-            print ('Problem retrieving gas detector PVs; possible photon '
-                   'appliance issue.  Will NOT change '
-                   'pressure/recipe/voltages/calibration/offset')
+
+            message = ('Problem retrieving gas detector PVs; possible photon '
+                       'appliance issue.  Will NOT change '
+                       'pressure/recipe/voltages/calibration/offset')
+
+            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
+                                       + "-</i> " + message)
+            print (message)
 
             self.ui.pressure_cb.setChecked(False)
             self.ui.pressure_cb.setDisabled(True)
@@ -916,337 +851,151 @@ class EnergyChange(QMainWindow):
             self.ui.pmt_cb.setDisabled(True)
             self.updateProgress(10)
 
-    def getHistFromArchiveTime(self, pv, setpoint):
+    def getAndLogHistory(self, pv, key, updateSetpoint=True):
         hist = self.get_hist(pv, self.timestamp["archiveStart"],
                              self.timestamp["archiveStop"], 'json')
-        self.gdetData[setpoint] = hist
+        hist = self.valFromJson(hist)
+
+        if updateSetpoint:
+            self.setpoint[key] = hist
+            self.printStatusMessage(key + ": " + str(hist))
+
         return hist
+
 
     def getPressureSetpoints(self):
 
-        def getAndLogPressure(pv, setpoint):
-            hist = self.getHistFromArchiveTime(pv, setpoint)
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> " + setpoint
-                                       + str(self.ValfromJson(hist)))
-
-        getAndLogPressure('VGBA:FEE1:240:P', "GD1PressureHi")
-        getAndLogPressure('VGBA:FEE1:240:P', "GD1PressureLo")
-        getAndLogPressure('VGBA:FEE1:360:P', "GD2PressureHi")
-        getAndLogPressure('VGBA:FEE1:360:P', "GD2PressureLo")
+        self.getAndLogHistory('VGBA:FEE1:240:P', "GD1PressureHi")
+        self.getAndLogHistory('VGBA:FEE1:240:P', "GD1PressureLo")
+        self.getAndLogHistory('VGBA:FEE1:360:P', "GD2PressureHi")
+        self.getAndLogHistory('VGBA:FEE1:360:P', "GD2PressureLo")
 
         for PMT in ["241", "242", "361", "362"]:
-            getAndLogPressure('HVCH:FEE1:' + PMT + ':VoltageSet',
-                              "voltagePMT" + PMT)
+            self.getAndLogHistory('HVCH:FEE1:' + PMT + ':VoltageSet',
+                                  "voltagePMT" + PMT)
 
     # Random setpoints we also want to load.  Grab them from archive appliance
     def GetSetpoints(self):
 
-        self.xcav["x"] = self.get_hist('FBCK:FB01:TR03:S1DES',
-                                       self.timestamp["archiveStart"],
-                                       self.timestamp["archiveStop"], 'json')
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "Xcav X Setpoint:"
-                                   + str(self.ValfromJson(self.xcav["x"])))
-
-        self.xcav["y"] = self.get_hist('FBCK:FB01:TR03:S2DES',
-                                       self.timestamp["archiveStart"],
-                                       self.timestamp["archiveStop"], 'json')
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "Xcav Y Setpoint:"
-                                   + str(self.ValfromJson(self.xcav["y"])))
+        self.getAndLogHistory('FBCK:FB01:TR03:S1DES', "xcavLaunchX")
+        self.getAndLogHistory('FBCK:FB01:TR03:S2DES', "xcavLaunchY")
 
         try:
-            self.laser["LHWP1"] = self.get_hist('WPLT:LR20:220:LHWP_ANGLE',
-                                                self.timestamp[
-                                                    "archiveStart"],
-                                                self.timestamp["archiveStop"],
-                                                'json')
-
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> " + "LH Waveplate 1:"
-                                       + str(
-                self.ValfromJson(self.laser["LHWP1"])))
-
-            self.laser["LHWP2"] = self.get_hist('WPLT:LR20:230:LHWP_ANGLE',
-                                                self.timestamp[
-                                                    "archiveStart"],
-                                                self.timestamp["archiveStop"],
-                                                'json')
-
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> " + "LH Waveplate 2:"
-                                       + str(
-                self.ValfromJson(self.laser["LHWP2"])))
+            self.getAndLogHistory('WPLT:LR20:220:LHWP_ANGLE',
+                                  "heaterWaveplate1")
+            self.getAndLogHistory('WPLT:LR20:230:LHWP_ANGLE',
+                                  "heaterWaveplate2")
 
         except:
-            print 'Could not retrieve heater waveplate values, will not load'
+            message = ('Could not retrieve heater waveplate values, '
+                       'will not load')
+            print message
             self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> "
-                                       + 'Could not retrieve heater '
-                                         'waveplate(s), will not set')
+                                       + "-</i> " + message)
 
-        self.laser["VHCWP"] = self.get_hist('WPLT:IN20:467:VHC_ANGLE',
-                                            self.timestamp["archiveStart"],
-                                            self.timestamp["archiveStop"],
-                                            'json')
+        self.getAndLogHistory('WPLT:IN20:467:VHC_ANGLE', "waveplateVHC")
+        self.getAndLogHistory('WPLT:IN20:459:CH1_ANGLE', "waveplateCH1")
 
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "VHC Waveplate:"
-                                   + str(self.ValfromJson(self.laser["VHCWP"])))
+        self.getAndLogHistory('FBCK:FB03:TR04:S1DES', "undLaunchPosX")
+        self.getAndLogHistory('FBCK:FB03:TR04:S2DES', "undLaunchAngX")
+        self.getAndLogHistory('FBCK:FB03:TR04:S3DES', "undLaunchPosY")
+        self.getAndLogHistory('FBCK:FB03:TR04:S4DES', "undLaunchAngY")
 
-        self.laser["CH1WP"] = self.get_hist('WPLT:IN20:459:CH1_ANGLE',
-                                            self.timestamp["archiveStart"],
-                                            self.timestamp["archiveStop"],
-                                            'json')
+        self.getAndLogHistory('FBCK:FB04:LG01:DL2VERNIER', "vernier")
 
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "CH1 Waveplate:"
-                                   + str(
-            self.ValfromJson(self.laser["CH1WP"])))
+        self.getAndLogHistory('ACCL:LI25:1:PDES', "phaseL3")
 
-        self.undLaunch["xPos"] = self.get_hist('FBCK:FB03:TR04:S1DES',
-                                               self.timestamp["archiveStart"],
-                                               self.timestamp["archiveStop"],
-                                               'json')
+        self.getAndLogHistory('ACCL:LI21:180:L1X_ADES', "amplitudeL1X")
+        self.getAndLogHistory('ACCL:LI21:180:L1X_PDES', "phaseL1X")
 
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "Und Launch X Setpoint:"
-                                   + str(
-            self.ValfromJson(self.undLaunch["xPos"])))
+        self.getAndLogHistory('PSDL:LR20:117:TDES', "pulseStackerDelay")
+        self.getAndLogHistory('WPLT:LR20:117:PSWP_ANGLE',
+                              "pulseStackerWaveplate")
 
-        self.undLaunch["xAng"] = self.get_hist('FBCK:FB03:TR04:S2DES',
-                                               self.timestamp["archiveStart"],
-                                               self.timestamp["archiveStop"],
-                                               'json')
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "Und Launch X' Setpoint:"
-                                   + str(
-            self.ValfromJson(self.undLaunch["xAng"])))
-
-        self.undLaunch["yPos"] = self.get_hist('FBCK:FB03:TR04:S3DES',
-                                               self.timestamp["archiveStart"],
-                                               self.timestamp["archiveStop"],
-                                               'json')
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "Und Launch Y Setpoint:"
-                                   + str(
-            self.ValfromJson(self.undLaunch["yPos"])))
-
-        self.undLaunch["yAng"] = self.get_hist('FBCK:FB03:TR04:S4DES',
-                                               self.timestamp["archiveStart"],
-                                               self.timestamp["archiveStop"],
-                                               'json')
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "Und Launch Y' Setpoint:"
-                                   + str(
-            self.ValfromJson(self.undLaunch["yAng"])))
-
-        self.vernier = self.get_hist('FBCK:FB04:LG01:DL2VERNIER',
-                                     self.timestamp["archiveStart"],
-                                     self.timestamp["archiveStop"], 'json')
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "Vernier:"
-                                   + str(self.ValfromJson(self.vernier)))
-
-        self.L3["phase"] = self.get_hist('ACCL:LI25:1:PDES',
-                                         self.timestamp["archiveStart"],
-                                         self.timestamp["archiveStop"], 'json')
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "L3 Phase:"
-                                   + str(self.ValfromJson(self.L3["phase"])))
-
-        self.L1X["amplitude"] = self.get_hist('ACCL:LI21:180:L1X_ADES',
-                                              self.timestamp["archiveStart"],
-                                              self.timestamp["archiveStop"],
-                                              'json')
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "L1X Amp:"
-                                   + str(
-            self.ValfromJson(self.L1X["amplitude"])))
-
-        self.L1X["phase"] = self.get_hist('ACCL:LI21:180:L1X_PDES',
-                                          self.timestamp["archiveStart"],
-                                          self.timestamp["archiveStop"], 'json')
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "L1X Phase:"
-                                   + str(self.ValfromJson(self.L1X["phase"])))
-
-        self.laser["pulseStackerDelay"] = self.get_hist('PSDL:LR20:117:TDES',
-                                                        self.timestamp[
-                                                            "archiveStart"],
-                                                        self.timestamp[
-                                                            "archiveStop"],
-                                                        'json')
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "Stacker Delay:"
-                                   + str(
-            self.ValfromJson(self.laser["pulseStackerDelay"])))
-
-        self.laser["pulseStackerWP"] = self.get_hist('WPLT:LR20:117:PSWP_ANGLE',
-                                                     self.timestamp[
-                                                         "archiveStart"],
-                                                     self.timestamp[
-                                                         "archiveStop"], 'json')
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "Stacker Wavepl:"
-                                   + str(
-            self.ValfromJson(self.laser["pulseStackerWP"])))
-
-        self.BC1["leftJaw"] = self.get_hist('COLL:LI21:235:MOTR.VAL',
-                                            self.timestamp["archiveStart"],
-                                            self.timestamp["archiveStop"],
-                                            'json')
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "BC1 left jaw:"
-                                   + str(self.ValfromJson(self.BC1["leftJaw"])))
-
-        self.BC1["rightJaw"] = self.get_hist('COLL:LI21:236:MOTR.VAL',
-                                             self.timestamp["archiveStart"],
-                                             self.timestamp["archiveStop"],
-                                             'json')
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "BC1 right jaw:"
-                                   + str(
-            self.ValfromJson(self.BC1["rightJaw"])))
+        self.getAndLogHistory('COLL:LI21:235:MOTR.VAL', "BC1LeftJaw")
+        self.getAndLogHistory('COLL:LI21:236:MOTR.VAL', "BC1RightJaw")
 
     # Get chicane mover value and phase value
     def GetBC2Mover(self):
-        self.BC2["mover"] = self.get_hist('BMLN:LI24:805:MOTR.VAL',
-                                          self.timestamp["archiveStart"],
-                                          self.timestamp["archiveStop"], 'json')
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "BC2 Mover Pos:"
-                                   + str(self.ValfromJson(self.BC2["mover"])))
-
-        self.BC2["phase"] = self.get_hist('SIOC:SYS0:ML00:AO063',
-                                          self.timestamp["archiveStart"],
-                                          self.timestamp["archiveStop"], 'json')
-
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + "BC2 Phase:"
-                                   + str(self.ValfromJson(self.BC2["phase"])))
+        self.getAndLogHistory('BMLN:LI24:805:MOTR.VAL', "BC2Mover")
+        self.getAndLogHistory('SIOC:SYS0:ML00:AO063', "BC2Phase")
 
     # Get mirror positions from time of interest
     def GetMirrors(self):
-        # M1S change needed variable
-        self.mirror["change"] = False
 
-        # Changing M1S to hard variable
-        self.mirror["hard"] = False
+        goingFromHardToSoft = (self.setpoint["photonEnergyNow"]
+                               > ENERGY_BOUNDARY
+                               > self.setpoint["photonEnergyDesired"])
 
-        # Changing M1S to soft variable
-        self.mirror["soft"] = False
+        goingFromSoftToHard = (self.setpoint["photonEnergyDesired"]
+                               > ENERGY_BOUNDARY
+                               > self.setpoint["photonEnergyNow"])
 
-        # M3S change needed variable
-        self.mirror["softSwitch"] = False
+        self.mirror["needToChangeM1"] = (goingFromHardToSoft
+                                         or goingFromSoftToHard)
 
-        # Changing M3S to AMO variable
-        self.mirror["AMO"] = False
+        wantHardXrays = self.setpoint["photonEnergyDesired"] > ENERGY_BOUNDARY
 
-        # Changing M3S to SXR variable
-        self.mirror["SXR"] = False
+        self.mirror["hardPositionNeeded"] = wantHardXrays
+        self.mirror["softPositionNeeded"] = not wantHardXrays
 
-        # TODO maybe these were cast as floats for a reason
-        if ((self.photon["energyNow"] > 2050 > self.photon["energy"])
-                or (self.photon["energy"] > 2050 > self.photon["energyNow"])):
+        if self.mirror["needToChangeM1"]:
+            self.printStatusMessage('Soft/Hard mirror change needed')
 
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> "
-                                       + 'Soft/Hard mirror change needed')
-            self.mirror["change"] = True
-
-            if float(self.photon["energy"]) > 2050:
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> "
-                                           + 'Will change M1 mirror to Hard')
-                self.mirror["hard"] = True
+            if self.mirror["hardPositionNeeded"]:
+                self.printStatusMessage('Will change M1 mirror to Hard')
 
             else:
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> "
-                                           + 'Will change M1 mirror to Soft')
-                self.mirror["soft"] = True
+                self.printStatusMessage('Will change M1 mirror to Soft')
 
         try:
-            # TODO what does it mean to have a pass first thing in a try?
-            pass
-            M3SposThen = self.get_hist('STEP:FEE1:1811:MOTR.RBV',
-                                       self.timestamp["archiveStart"],
-                                       self.timestamp["archiveStop"], 'json')
-            M3SposThen = self.ValfromJson(M3SposThen)
+            positionDesiredM3S = self.getAndLogHistory('STEP:FEE1:1811:MOTR.RBV',
+                                                       None, False)
 
         except:
             # Channel archiver issues crop up from time to time
-            print ('Could not determine M3 position at requested time (Archive '
-                   'Appliance error).  Soft mirror will NOT be changed.')
+            message = ('Could not determine M3 position at requested time '
+                       '(Archive Appliance error). Soft mirror will NOT be '
+                       'changed.')
+            print message
+            self.printStatusMessage(message)
 
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> "
-                                       + 'M3 movement disabled; problem '
-                                         'retrieving position from archive '
-                                         'appliance')
-            self.mirror["softSwitch"] = False
+            self.mirror["needToChangeM3"] = False
             self.ui.m3_cb.setChecked(False)
             self.ui.m3_cb.setDisabled(True)
             self.updateProgress(10)
             return
 
         self.ui.m3_cb.setDisabled(False)
-        M3SposNow = caget('STEP:FEE1:1811:MOTR.RBV')
+        positionNowM3S = caget('STEP:FEE1:1811:MOTR.RBV')
 
-        try:
-            # TODO maybe these were also cast as floats for a reason
-            if (M3SposThen > 0) and (M3SposNow < 0):
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> "
-                                           + 'M3 will be changed to provide '
-                                             'beam to AMO (unless beam will be '
-                                             'going down hard line)')
-                self.mirror["softSwitch"], self.mirror["AMO"] = True, True
+        # The setpoints are 4501um for AMO and -4503um for SXR
+        # TODO add ability to change soft mirror?
+        self.mirror["amoPositionNeeded"] = positionDesiredM3S > 0
+        self.mirror["sxrPositionNeeded"] = not self.mirror["amoPositionNeeded"]
 
-            if M3SposThen < 0 and (M3SposNow > 0):
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> "
-                                           + 'M3 will be changed to provide '
-                                             'beam to SXR (unless beam will be '
-                                             'going down hard line)')
-                self.mirror["softSwitch"], self.mirror["SXR"] = True, True
+        goingFromSXRToAMO = positionDesiredM3S > 0 > positionNowM3S
+        goingFromAMOToSXR = positionDesiredM3S < 0 < positionNowM3S
 
-        except TypeError:
-            # Channel archiver issues crop up from time to time
-            print ('Could not determine M3 position at requested time (Archive '
-                   'Appliance error).  Soft mirror will NOT be changed.')
+        self.mirror["needToChangeM3"] = goingFromSXRToAMO or goingFromAMOToSXR
 
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> "
-                                       + 'M3 movement disabled; problem '
-                                         'retrieving position from archive '
-                                         'appliance')
-            self.mirror["softSwitch"] = False
-            self.ui.m3_cb.setChecked(False)
-            self.ui.m3_cb.setDisabled(True)
+        if goingFromSXRToAMO:
+            self.printStatusMessage('M3 will be changed to provide beam to '
+                                    'AMO (unless beam will be going down '
+                                    'hard line)')
 
-            self.updateProgress(10)
+        if goingFromAMOToSXR:
+            self.printStatusMessage('M3 will be changed to provide beam to '
+                                    'SXR (unless beam will be going down '
+                                    'hard line)')
+
+        self.updateProgress(10)
 
     # Disable BC2 longitudinal, DL2 energy, transverse feedbacks downstream of
     # XCAV
     def DisableFB(self):
         QApplication.processEvents()
+
         self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
                                    + 'Inserting stoppers, disabling feedbacks')
 
@@ -1269,63 +1018,54 @@ class EnergyChange(QMainWindow):
             # Insert stoppers
             caput(pv, '0')
 
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + 'Stoppers inserted and feedbacks disabled')
+        self.printStatusMessage('Stoppers inserted and feedbacks disabled')
 
     # Load scores for selected region(s). Use threading to speed things up
     # (calls ScoreThread function which is defined below)
     def LoadScores(self):
-        self.ui.textBrowser.append('<i>' + str(datetime.now())[11:19]
-                                   + "-</i> " + 'Loading Scores...')
+        self.printStatusMessage('Loading Scores...')
 
         QApplication.processEvents()
         self.ui.textBrowser.repaint()
 
-        self.thread_list = []
-        regionlist = []
+        self.diagnostics["threads"] = []
+        regionList = []
 
         if self.ui.injector_cb.isChecked():
-            regionlist.append('"Gun to TD11-LEM"')
+            regionList.append('"Gun to TD11-LEM"')
 
         if self.ui.score_cb.isChecked():
-            regionlist.extend(('"Cu Linac-LEM"', '"Hard BSY thru LTUH-LEM"'))
+            regionList.extend(('"Cu Linac-LEM"', '"Hard BSY thru LTUH-LEM"'))
 
         if self.ui.taper_cb.isChecked():
-            regionlist.extend(('"Undulator Taper"', '"Undulator-LEM"'))
+            regionList.extend(('"Undulator Taper"', '"Undulator-LEM"'))
 
         # Put message in message log that scores are being loaded
         log("facility=pythonenergychange Loading SCORE from "
             + self.scoreInfo["dateChosen"] + " " + self.scoreInfo["timeChosen"]
-            + " for regions " + ", ".join(regionlist))
+            + " for regions " + ", ".join(regionList))
 
-        for region in regionlist:
+        for region in regionList:
             # Have a thread subclass to handle this (defined at bottom of this
             # file); normal threading class returns NONE
-            t = ThreadWithReturnValue(target=self.ScoreThread,
-                                      args=(region,))
-            self.thread_list.append(t)
+            t = ThreadWithReturnValue(target=self.ScoreThread, args=(region,))
+            self.diagnostics["threads"].append(t)
 
-        for thread in self.thread_list:
+        for thread in self.diagnostics["threads"]:
             thread.start()
 
     def CheckScoreLoads(self):
         try:
-            for thread in self.thread_list:
+            for thread in self.diagnostics["threads"]:
                 # I want to wait for each thread to finish execution so the
                 # score completion/failure messages come out together
                 # TODO what does join return?
                 status, region = thread.join()
-                if status[-8:-1] == 'SUCCESS':
-                    self.ui.textBrowser.append("<i>"
-                                               + str(datetime.now())[11:19]
-                                               + "-</i> "
-                                               + 'Set/trimmed devices for '
-                                               + region)
+                if status[-8:-1] == 0:
+                    self.printStatusMessage('Set/trimmed devices for ' + region)
                 else:
-                    self.ui.textBrowser.append("<i>"
-                                               + str(datetime.now())[11:19]
-                                               + "-</i> " + 'Error loading '
-                                               + region + ' region (see xterm)')
+                    self.printStatusMessage('Error loading ' + region
+                                            + ' region (see xterm)')
                     print status
 
                     # This flags the program to inform the user at end of change
@@ -1341,16 +1081,9 @@ class EnergyChange(QMainWindow):
 
     # Thread function for loading each individual score region
     def ScoreThread(self, region):
-        # TODO I can change this to a method call, but I have no idea what the
-        # status should be IT CAN BE WHATEVER I WANT
-        command = ('/usr/local/lcls/tools/python/toolbox/echg/'
-                   'score_load_oracle.py ' + region + ' '
-                   + self.scoreInfo["dateChosen"] + ' '
-                   + self.scoreInfo["timeChosen"] + ':00')
-
-        runloadscript = Popen(command, shell=True, stdout=PIPE)
-        status = runloadscript.communicate()[0]
-        return status, region
+        data = self.scoreObject.read_pvs(region, self.scoreInfo["dateChosen"],
+                                         self.scoreInfo["timeChosen"] + ':00')
+        return len(setDevices(region, data)), region
 
     # Check that bend dump has finished trimming and then start standardize
     def StdzMags(self):
@@ -1361,16 +1094,14 @@ class EnergyChange(QMainWindow):
         # include UND to Matched Design
         regions = ['SIOC:SYS0:ML01:AO404', 'SIOC:SYS0:ML01:AO403',
                    'SIOC:SYS0:ML01:AO402', 'SIOC:SYS0:ML01:AO401',
-                   'SIOC:SYS0:ML01:AO065',
-                   'SIOC:SYS0:ML01:AO064']
+                   'SIOC:SYS0:ML01:AO065', 'SIOC:SYS0:ML01:AO064']
 
         for region in regions:
             caput(region, '0')
 
         status = caget('BEND:DMP1:400:CTRL')
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + 'Waiting for BEND:DMP1:400:CTRL to read '
-                                     '"Ready"...')
+        self.printStatusMessage('Waiting for BEND:DMP1:400:CTRL to read '
+                                '"Ready"...')
 
         # Simple loop to wait for this supply to finish trimming (this supply
         # takes longest; how kalsi determines when to start stdz)
@@ -1382,8 +1113,7 @@ class EnergyChange(QMainWindow):
         # Paranoid sleep, sometimes one of the BSY quads wasn't standardizing
         sleep(3)
 
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + 'Starting STDZ')
+        self.printStatusMessage('Starting STDZ')
 
         # Was QUAD:BSY0:1, 28 before BSY reconfig. Weren't in LEM. Unsure if
         # new devices will be.
@@ -1418,34 +1148,36 @@ class EnergyChange(QMainWindow):
     # score) and UND(fast+slow) feedbacks
     def Set6x6(self):
 
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + 'Setting 6x6 Parameters and LTU/UND '
-                                     'feedback matrices')
+        self.printStatusMessage('Setting 6x6 Parameters and LTU/UND '
+                                'feedback matrices')
 
         caput('FBCK:FB04:LG01:STATE', '0')
-        caput('FBCK:FB04:LG01:S3DES', self.ValfromJson(self.BC1["current"]))
-        caput('ACCL:LI22:1:ADES', self.ValfromJson(self.L2["amplitude"]))
-        caput('ACCL:LI22:1:PDES', self.ValfromJson(self.L2["phase"]))
-        caput('FBCK:FB04:LG01:S5DES', self.ValfromJson(self.L2["peakCurrent"]))
-        caput('ACCL:LI25:1:ADES', self.ValfromJson(self.L3["energy"]))
+
+        caput('FBCK:FB04:LG01:S3DES', self.setpoint["BC1PeakCurrent"])
+
+        caput('ACCL:LI22:1:ADES', self.setpoint["amplitudeL2"])
+
+        caput('ACCL:LI22:1:PDES', self.setpoint["phaseL2"])
+
+        caput('FBCK:FB04:LG01:S5DES', self.setpoint["peakCurrentL2"])
+
+        caput('ACCL:LI25:1:ADES', self.setpoint["energyL3"])
+
         sleep(.2)
+
         caput('FBCK:FB04:LG01:STATE', '1')
 
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + 'Setting 6x6 complete')
+        self.printStatusMessage('Setting 6x6 complete')
 
     def SetAllTheSetpoints(self):
         if self.ui.matrices_cb.isChecked():
-            command = ('/usr/local/lcls/tools/python/toolbox/echg/'
-                       'matrices_load.py ' + self.scoreInfo["dateChosen"] + ' '
-                       + self.scoreInfo["timeChosen"] + ':00')
-
-            # Load matrices and stop/start feedbacks
-            Popen(command, shell=True)
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> "
-                                       + 'Sent LTU/UND matrices to feedbacks '
-                                         'and stopped/started')
+            data = self.scoreObject.read_pvs("Feedback-All",
+                                             self.scoreInfo["dateChosen"],
+                                             self.scoreInfo["timeChosen"]
+                                             + ':00')
+            setMatricesAndRestartFeedbacks(data)
+            self.printStatusMessage('Sent LTU/UND matrices to feedbacks and '
+                                    'stopped/started')
 
         # Set BC2 chicane mover and phase (magnet strength is set in
         # LoadScores())
@@ -1458,302 +1190,85 @@ class EnergyChange(QMainWindow):
             self.SetSetpoints()
 
         if self.ui.pstack_cb.isChecked():
-            caput('PSDL:LR20:117:TDES',
-                  self.ValfromJson(self.laser["pulseStackerDelay"]))
+            caput('PSDL:LR20:117:TDES', self.setpoint["pulseStackerDelay"])
+
             caput('WPLT:LR20:117:PSWP_ANGLE',
-                  self.ValfromJson(self.laser["pulseStackerWP"]))
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> "
-                                       + 'Set pulse stacker delay and '
-                                         'waveplate')
+                  self.setpoint["pulseStackerWaveplate"])
+
+            self.printStatusMessage('Set pulse stacker delay and waveplate')
 
         if self.ui.l1x_cb.isChecked():
-            caput('ACCL:LI21:180:L1X_ADES',
-                  self.ValfromJson(self.L1X["amplitude"]))
-            caput('ACCL:LI21:180:L1X_PDES', self.ValfromJson(self.L1X["phase"]))
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> "
-                                       + 'Set L1X phase and amplitude')
+            caput('ACCL:LI21:180:L1X_ADES', self.setpoint["amplitudeL1X"])
+            caput('ACCL:LI21:180:L1X_PDES', self.setpoint["phaseL1X"])
+            self.printStatusMessage('Set L1X phase and amplitude')
 
         if self.ui.bc1coll_cb.isChecked():
-            caput('COLL:LI21:235:MOTR.VAL',
-                  self.ValfromJson(self.BC1["leftJaw"]))
-            caput('COLL:LI21:236:MOTR.VAL',
-                  self.ValfromJson(self.BC1["rightJaw"]))
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> " + 'Set BC1 collimators')
+            caput('COLL:LI21:235:MOTR.VAL', self.setpoint["BC1LeftJaw"])
+            caput('COLL:LI21:236:MOTR.VAL', self.setpoint["BC1RightJaw"])
+            self.printStatusMessage('Set BC1 collimators')
 
     # Set mirrors to desired positions
     def SetMirrors(self):
         QApplication.processEvents()
 
-        # M1S switching to hard position, don't care about M3S
-        if self.mirror["hard"] & self.ui.m1_cb.isChecked():
-            caput('MIRR:FEE1:1560:LOCK', '1')
-            sleep(.3)
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> " + 'Setting M1 for Hard')
-            caput('MIRR:FEE1:1561:MOVE', '1')
+        caput('MIRR:FEE1:1560:LOCK', '1')
+        sleep(.3)
 
-        # M1S switching to soft position, M3S switch not needed
-        elif (self.mirror["soft"] & (not self.mirror["softSwitch"])
-              & self.ui.m1_cb.isChecked()):
+        if self.mirror["hardPositionNeeded"]:
+            if self.ui.m1_cb.isChecked():
+                self.printStatusMessage('Setting M1 for Hard')
+                caput('MIRR:FEE1:1561:MOVE', '1')
 
-            caput('MIRR:FEE1:1560:LOCK', '1')
-            sleep(.3)
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> " + 'Setting M1 for Soft')
-            caput('MIRR:FEE1:0561:MOVE', '1')
+        elif self.mirror["softPositionNeeded"]:
+            if self.ui.m1_cb.isChecked():
+                self.printStatusMessage('Setting M1 for Soft')
+                caput('MIRR:FEE1:0561:MOVE', '1')
 
-        # M1S switching to soft position, M3S switch needed
-        elif (self.mirror["soft"] & self.mirror["softSwitch"]
-              & (self.ui.m1_cb.isChecked() or self.ui.m3_cb.isChecked())):
+            if self.ui.m3_cb.isChecked():
+                caput('MIRR:FEE1:1810:LOCK', '1')
+                sleep(.3)
 
-            caput('MIRR:FEE1:1560:LOCK', '1')
-            caput('MIRR:FEE1:1810:LOCK', '1')
-            sleep(.3)
-
-            if self.mirror["SXR"]:
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> "
-                                           + 'Setting M1 for Soft and/or M3 '
-                                             'for SXR (depending on your '
-                                             'selection)')
-
-                if self.ui.m1_cb.isChecked():
-                    self.ui.textBrowser.append("<i>"
-                                               + str(datetime.now())[11:19]
-                                               + "-</i> "
-                                               + 'Setting M1 for Soft')
-                    caput('MIRR:FEE1:0561:MOVE', '1')
-
-                if self.ui.m3_cb.isChecked():
-                    self.ui.textBrowser.append("<i>"
-                                               + str(datetime.now())[11:19]
-                                               + "-</i> "
-                                               + 'Setting M3 for SXR')
+                if self.mirror["sxrPositionNeeded"]:
+                    self.printStatusMessage('Setting M3 for SXR')
                     caput('MIRR:FEE1:2811:MOVE', '1')
 
-            if self.mirror["AMO"]:
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> "
-                                           + 'Setting M1 for Soft and/or M3 '
-                                             'for AMO (depending on your '
-                                             'selection)')
-
-                if self.ui.m1_cb.isChecked():
-                    self.ui.textBrowser.append("<i>"
-                                               + str(datetime.now())[11:19]
-                                               + "-</i> "
-                                               + 'Setting M1 for Soft')
-                    caput('MIRR:FEE1:0561:MOVE', '1')
-
-                if self.ui.m3_cb.isChecked():
-                    self.ui.textBrowser.append("<i>"
-                                               + str(datetime.now())[11:19]
-                                               + "-</i> "
-                                               + 'Setting M3 for AMO')
+                elif self.mirror["amoPositionNeeded"]:
+                    self.printStatusMessage('Setting M3 for AMO')
                     caput('MIRR:FEE1:1811:MOVE', '1')
 
-        # M1S mirror change not needed, M3S mirror was in different position,
-        # going to an energy where we care about M3S position (i.e. beam is
-        # going that way as we are staying with soft x-rays)
-        elif ((not self.mirror["soft"]) & (not self.mirror["hard"]) &
-              self.mirror["softSwitch"]
-              & (self.photon["energyNow"] < 2050) & self.ui.m3_cb.isChecked()):
-            caput('MIRR:FEE1:1810:LOCK', '1')
-            sleep(.3)
-            if self.mirror["SXR"]:
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> " + 'Setting M3 for SXR')
+    def waitForMirror(self, statusPV, lockPV, mirror, desiredPosition):
+        self.printStatusMessage('Checking ' + mirror + ' Mirror Position for '
+                                + desiredPosition + '...')
 
-                caput('MIRR:FEE1:2811:MOVE', '1')
-
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> "
-                                           + 'Checking M3 Position for SXR...')
-            if self.mirror["AMO"]:
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> " + 'Setting M3 for AMO')
-
-                caput('MIRR:FEE1:1811:MOVE', '1')
-
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> "
-                                           + 'Checking M3 Position for AMO...')
+        while not caget(statusPV):
+            QApplication.processEvents()
+            sleep(1)
+        self.printStatusMessage('Detected '+ mirror + ' Mirror in '
+                                + desiredPosition + ' Position')
+        caput(lockPV, '0')
 
     # Check that mirrors reach their desired positions
     def CheckMirrors(self):
         QApplication.processEvents()
-        waiting = True
-        # M1S switching to hard position, don't care about M3S
-        if self.mirror["hard"] & self.ui.m1_cb.isChecked():
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> "
-                                       + 'Checking M1 Mirror Position for '
-                                         'Hard...')
 
-            while waiting:
-                QApplication.processEvents()
-                sleep(1)
-                position = caget('MIRR:FEE1:1561:POSITION')
+        if self.mirror["hardPositionNeeded"]:
+            if self.ui.m1_cb.isChecked():
+                self.waitForMirror('MIRR:FEE1:1561:POSITION',
+                                   'MIRR:FEE1:1560:LOCK', "M1", "Hard")
 
-                if position == 1:
-                    self.ui.textBrowser.append("<i>"
-                                               + str(datetime.now())[11:19]
-                                               + "-</i> "
-                                               + 'Detected M1 Mirror in Hard '
-                                                 'Position')
-                    waiting = False
+        elif self.mirror["softPositionNeeded"]:
+            if self.ui.m1_cb.isChecked():
+                self.waitForMirror('MIRR:FEE1:0561:POSITION',
+                                   'MIRR:FEE1:1560:LOCK', "M1", "Soft")
 
-            caput('MIRR:FEE1:1560:LOCK', '0')
+            if self.ui.m3_cb.isChecked():
+                if self.mirror["sxrPositionNeeded"]:
+                    self.waitForMirror('MIRR:FEE1:2811:POSITION',
+                                       'MIRR:FEE1:1810:LOCK', "M3", "SXR")
 
-        # M1S switching to soft position, M3S switch not needed
-        elif self.mirror["soft"] & (
-                not self.mirror["softSwitch"]) & self.ui.m1_cb.isChecked():
-
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> "
-                                       + 'Checking M1 Mirror Position for '
-                                         'Soft...')
-            while waiting:
-                QApplication.processEvents()
-                sleep(1)
-                position = caget('MIRR:FEE1:0561:POSITION')
-
-                if position == 1:
-                    self.ui.textBrowser.append("<i>"
-                                               + str(datetime.now())[11:19]
-                                               + "-</i> "
-                                               + 'Detected M1 Mirror in Soft '
-                                                 'Position')
-                    waiting = False
-
-            caput('MIRR:FEE1:1560:LOCK', '0')
-
-        # M1S switching to soft position, M3S switch needed
-        elif (self.mirror["soft"] & self.mirror["softSwitch"]
-              & (self.ui.m1_cb.isChecked() or self.ui.m3_cb.isChecked())):
-
-            if self.mirror["SXR"]:
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> "
-                                           + 'Waiting for mirror(s)...')
-                while waiting:
-                    QApplication.processEvents()
-                    sleep(1)
-                    M1Sposition = caget('MIRR:FEE1:0561:POSITION')
-                    M3Sposition = caget('MIRR:FEE1:2811:POSITION')
-
-                    if ((M1Sposition == 1) & (M3Sposition == 1)
-                            & self.ui.m1_cb.isChecked()
-                            & self.ui.m3_cb.isChecked()):
-                        self.ui.textBrowser.append("<i>"
-                                                   + str(datetime.now())[11:19]
-                                                   + "-</i> "
-                                                   + 'Detected M1 Mirror in '
-                                                     'Soft Position, M3 in SXR '
-                                                     'position')
-                        waiting = False
-
-                    elif ((M1Sposition == 1) & self.ui.m1_cb.isChecked()
-                          & (not self.ui.m3_cb.isChecked())):
-                        self.ui.textBrowser.append("<i>"
-                                                   + str(datetime.now())[11:19]
-                                                   + "-</i> "
-                                                   + 'Detected M1 Mirror in '
-                                                     'Soft Position')
-                        waiting = False
-
-                    elif ((M3Sposition == 1) & self.ui.m3_cb.isChecked()
-                          & (not self.ui.m1_cb.isChecked())):
-                        self.ui.textBrowser.append("<i>"
-                                                   + str(datetime.now())[11:19]
-                                                   + "-</i> "
-                                                   + 'Detected M3 Mirror in '
-                                                     'SXR Position')
-                        waiting = False
-
-            if self.mirror["AMO"]:
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> "
-                                           + 'Waiting for mirror(s)...')
-                while waiting:
-                    QApplication.processEvents()
-                    sleep(1)
-                    M1Sposition = caget('MIRR:FEE1:0561:POSITION')
-                    M3Sposition = caget('MIRR:FEE1:1811:POSITION')
-
-                    if (M1Sposition == 1) & (M3Sposition == 1):
-                        self.ui.textBrowser.append("<i>"
-                                                   + str(datetime.now())[11:19]
-                                                   + "-</i> "
-                                                   + 'Detected M1 Mirror in '
-                                                     'Soft Position, M3 in '
-                                                     'AMO position')
-                        waiting = False
-
-                    elif ((M1Sposition == 1) & self.ui.m1_cb.isChecked()
-                          & (not self.ui.m3_cb.isChecked())):
-                        self.ui.textBrowser.append("<i>"
-                                                   + str(datetime.now())[11:19]
-                                                   + "-</i> "
-                                                   + 'Detected M1 Mirror in '
-                                                     'Soft Position')
-                        waiting = False
-
-                    elif ((M3Sposition == 1) & self.ui.m3_cb.isChecked()
-                          & (not self.ui.m1_cb.isChecked())):
-                        self.ui.textBrowser.append("<i>"
-                                                   + str(datetime.now())[11:19]
-                                                   + "-</i> "
-                                                   + 'Detected M3 Mirror in '
-                                                     'AMO Position')
-                        waiting = False
-
-            caput('MIRR:FEE1:1560:LOCK', '0')
-            caput('MIRR:FEE1:1810:LOCK', '0')
-
-        # M1S mirror change not needed, M3S mirror was in different position,
-        # going to an energy where we care about M3S position (i.e. beam is
-        # going that way as we are staying with soft x-rays)
-        elif ((not self.mirror["soft"]) & (not self.mirror["hard"]) &
-              self.mirror["softSwitch"]
-              & (self.photon["energyNow"] < 2050) & self.ui.m3_cb.isChecked()):
-
-            if self.mirror["SXR"]:
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> "
-                                           + 'Checking M3 Position for SXR...')
-                while waiting:
-                    QApplication.processEvents()
-                    sleep(1)
-                    M3Sposition = caget('MIRR:FEE1:2811:POSITION')
-                    if M3Sposition == 1:
-                        self.ui.textBrowser.append("<i>"
-                                                   + str(datetime.now())[11:19]
-                                                   + "-</i> "
-                                                   + 'Detected M3 in SXR '
-                                                     'position')
-                        waiting = False
-
-            if self.mirror["AMO"]:
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> "
-                                           + 'Checking M3 Position for AMO...')
-                while waiting:
-                    QApplication.processEvents()
-                    sleep(1)
-                    M3Sposition = caget('MIRR:FEE1:1811:POSITION')
-                    if M3Sposition == 1:
-                        self.ui.textBrowser.append("<i>"
-                                                   + str(datetime.now())[11:19]
-                                                   + "-</i> "
-                                                   + 'Detected M3S in AMO '
-                                                     'position')
-                        waiting = False
-
-            caput('MIRR:FEE1:1810:LOCK', '0')
+                elif self.mirror["amoPositionNeeded"]:
+                    self.waitForMirror('MIRR:FEE1:1811:POSITION',
+                                       'MIRR:FEE1:1810:LOCK', "M3", "AMO")
 
     # Score loading should set Magnet to proper value, this will set chicane
     # mover and chicane phase which makes sure R56 is right.
@@ -1761,60 +1276,46 @@ class EnergyChange(QMainWindow):
         BC2MoverNow = caget('BMLN:LI24:805:MOTR.VAL')
         BC2PhaseNow = caget('SIOC:SYS0:ML00:AO063')
 
-        if (BC2MoverNow == self.ValfromJson(self.BC2["mover"])
-                and BC2PhaseNow == self.ValfromJson(self.BC2["phase"])):
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> "
-                                       + 'BC2 Mover/Phase look the same, '
-                                         'not sending values')
-
-            # No need to load them since they are the same
+        if (BC2MoverNow == self.setpoint["BC2Mover"]
+                and BC2PhaseNow == self.setpoint["BC2Phase"]):
+            self.printStatusMessage('BC2 Mover/Phase look the same, '
+                                    'not sending values')
             return
 
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + 'Setting BC2 Mover and Phase')
+        self.printStatusMessage('Setting BC2 Mover and Phase')
 
-        caput('BMLN:LI24:805:MOTR.VAL', self.ValfromJson(self.BC2["mover"]))
-        caput('SIOC:SYS0:ML00:AO063', self.ValfromJson(self.BC2["phase"]))
+        caput('BMLN:LI24:805:MOTR.VAL', self.setpoint["BC2Mover"])
+        caput('SIOC:SYS0:ML00:AO063', self.setpoint["BC2Phase"])
 
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + 'Set BC2 Mover and Phase')
+        self.printStatusMessage('Set BC2 Mover and Phase')
 
     # Set random setpoints (xcav, und launch, lhwp etc.)
     def SetSetpoints(self):
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + 'Setting Xcav, LHWP, Und Launch, L3P and '
-                                     'vernier')
+        self.printStatusMessage('Setting Xcav, LHWP, Und Launch, L3P and '
+                                'vernier')
 
-        caput('FBCK:FB01:TR03:S1DES', self.ValfromJson(self.xcav["x"]))
-        caput('FBCK:FB01:TR03:S2DES', self.ValfromJson(self.xcav["y"]))
+        caput('FBCK:FB01:TR03:S1DES', self.setpoint["xcavLaunchX"])
+        caput('FBCK:FB01:TR03:S2DES', self.setpoint["xcavLaunchY"])
 
         try:
-            caput('WPLT:LR20:220:LHWP_ANGLE',
-                  self.ValfromJson(self.laser["LHWP1"]))
-            caput('WPLT:LR20:230:LHWP_ANGLE',
-                  self.ValfromJson(self.laser["LHWP2"]))
+            caput('WPLT:LR20:220:LHWP_ANGLE', self.setpoint["heaterWaveplate1"])
+            caput('WPLT:LR20:230:LHWP_ANGLE', self.setpoint["heaterWaveplate2"])
 
         except:
             print 'Unable to set heater waveplate(s)'
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> "
-                                       + 'Unable to set heater power'
-                                         ' waveplates')
+            self.printStatusMessage('Unable to set heater power waveplates')
 
-        caput('WPLT:IN20:467:VHC_ANGLE', self.ValfromJson(self.laser["VHCWP"]))
-        caput('WPLT:IN20:459:CH1_ANGLE',
-              self.ValfromJson(self.laser["CH1WP"]))
-        caput('FBCK:FB03:TR04:S1DES', self.ValfromJson(self.undLaunch["xPos"]))
-        caput('FBCK:FB03:TR04:S2DES', self.ValfromJson(self.undLaunch["xAng"]))
-        caput('FBCK:FB03:TR04:S3DES', self.ValfromJson(self.undLaunch["yPos"]))
-        caput('FBCK:FB03:TR04:S4DES', self.ValfromJson(self.undLaunch["yAng"]))
-        caput('FBCK:FB04:LG01:DL2VERNIER', self.ValfromJson(self.vernier))
-        caput('ACCL:LI25:1:PDES', self.ValfromJson(self.L3["phase"]))
+        caput('WPLT:IN20:467:VHC_ANGLE', self.setpoint["waveplateVHC"])
+        caput('WPLT:IN20:459:CH1_ANGLE', self.setpoint["waveplateCH1"])
+        caput('FBCK:FB03:TR04:S1DES', self.setpoint["undLaunchPosX"])
+        caput('FBCK:FB03:TR04:S2DES', self.setpoint["undLaunchAngX"])
+        caput('FBCK:FB03:TR04:S3DES', self.setpoint["undLaunchPosY"])
+        caput('FBCK:FB03:TR04:S4DES', self.setpoint["undLaunchAngY"])
+        caput('FBCK:FB04:LG01:DL2VERNIER', self.setpoint["vernier"])
+        caput('ACCL:LI25:1:PDES', self.setpoint["phaseL3"])
 
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19] + "-</i> "
-                                   + 'Set Xcav, LHWP, Und Launch, L3 Phase and '
-                                     'Vernier')
+        self.printStatusMessage('Set Xcav, LHWP, Und Launch, L3 Phase and '
+                                'Vernier')
 
     ############################################################################
     # HHHHHHHHHIIIIIIIIIIIIIIIIIIIIII
@@ -1823,51 +1324,45 @@ class EnergyChange(QMainWindow):
 
     # Set gas detector recipe/pressure and pmt voltages
     def SetGdet(self):
-        def caputGdetData(pv, key):
-            caput(pv, self.ValfromJson(self.gdetData[key]))
+        def caputSetpoint(pv, key):
+            caput(pv, self.setpoint[key])
 
         if self.ui.pmt_cb.isChecked():
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> "
-                                       + 'Setting PMT voltages/Calibration/'
-                                         'Offset')
+            self.printStatusMessage('Setting PMT voltages/Calibration/Offset')
             QApplication.processEvents()
 
             for PMT in ["241", "242", "361", "362"]:
-                caputGdetData('HVCH:FEE1:' + PMT + ':VoltageSet',
+                caputSetpoint('HVCH:FEE1:' + PMT + ':VoltageSet',
                               "voltagePMT" + PMT)
 
-                caputGdetData('GDET:FEE1:' + PMT + ':CALI',
+                caputSetpoint('GDET:FEE1:' + PMT + ':CALI',
                               "calibrationPMT" + PMT)
 
-                caputGdetData('GDET:FEE1:' + PMT + ':OFFS', "offsetPMT" + PMT)
+                caputSetpoint('GDET:FEE1:' + PMT + ':OFFS', "offsetPMT" + PMT)
 
-            self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                       + "-</i> "
-                                       + 'Set PMT voltages/Calibration/Offset')
+            self.printStatusMessage('Set PMT voltages/Calibration/Offset')
 
         self.setPressuresForHardMirrorChange()
         self.setPressuresForSoftMirrorChange()
 
         # No recipe change needed, not switching between hard/soft xrays
-        if not self.mirror["change"]:
+        if not self.mirror["needToChangeM1"]:
             if self.ui.pressure_cb.isChecked():
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> " + 'Setting pressures')
+                self.printStatusMessage('Setting pressures')
                 QApplication.processEvents()
-                caputGdetData('VFC:FEE1:GD01:PLO_DES', "GD1PressureLo")
-                caputGdetData('VFC:FEE1:GD02:PLO_DES', "GD2PressureLo")
-                caputGdetData('VFC:FEE1:GD01:PHI_DES', "GD1PressureHi")
-                caputGdetData('VFC:FEE1:GD02:PHI_DES', "GD2PressureHi")
+
+                caputSetpoint('VFC:FEE1:GD01:PLO_DES', "GD1PressureLo")
+                caputSetpoint('VFC:FEE1:GD02:PLO_DES', "GD2PressureLo")
+                caputSetpoint('VFC:FEE1:GD01:PHI_DES', "GD1PressureHi")
+                caputSetpoint('VFC:FEE1:GD02:PHI_DES', "GD2PressureHi")
 
     def setPressuresForSoftMirrorChange(self):
         # Mirror change to soft setting
-        if self.mirror["change"] and self.mirror["soft"]:
+        if self.mirror["needToChangeM1"] and self.mirror["softPositionNeeded"]:
             if self.ui.recipe_cb.isChecked():
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> "
-                                           + 'Changing recipe from high to low')
+                self.printStatusMessage('Changing recipe from high to low')
                 QApplication.processEvents()
+
                 caput('VFC:FEE1:GD01:PHI_DES', '0')
                 caput('VFC:FEE1:GD02:PHI_DES', '0')
                 sleep(14)
@@ -1876,41 +1371,34 @@ class EnergyChange(QMainWindow):
                 sleep(1.5)
 
             if self.ui.pressure_cb.isChecked():
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> " + 'Setting pressures')
+                self.printStatusMessage('Setting pressures')
                 QApplication.processEvents()
-                caput('VFC:FEE1:GD01:PLO_DES',
-                      self.ValfromJson(self.gdetData["GD1PressureLo"]))
-                caput('VFC:FEE1:GD02:PLO_DES',
-                      self.ValfromJson(self.gdetData["GD2PressureLo"]))
+
+                caput('VFC:FEE1:GD01:PLO_DES', self.setpoint["GD1PressureLo"])
+                caput('VFC:FEE1:GD02:PLO_DES', self.setpoint["GD2PressureLo"])
 
     def setPressuresForHardMirrorChange(self):
         # Mirror change required, and changing to hard xray setting; or somehow
         # are running hard xrays with low recipe (has happened and then OPS
         # thinks there is no FEL)
-        if ((self.mirror["change"] and self.mirror["hard"])
-                or ((self.photon["energy"] > 2050)
-                    and (caget('VFC:FEE1:GD01:RECIPE_DES') == 4))):
-
+        if self.mirror["hardPositionNeeded"]:
             if self.ui.recipe_cb.isChecked():
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> "
-                                           + 'Changing recipe from low to high')
+                self.printStatusMessage('Going to high recipe')
                 QApplication.processEvents()
+                
                 caput('VFC:FEE1:GD01:RECIPE_DES', '3')
                 caput('VFC:FEE1:GD02:RECIPE_DES', '3')
                 sleep(1.5)
 
             if self.ui.pressure_cb.isChecked():
-                self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                           + "-</i> " + 'Setting pressures')
+                self.printStatusMessage('Setting pressures')
                 QApplication.processEvents()
+
                 caput('VFC:FEE1:GD01:PLO_DES', 0.0)
                 caput('VFC:FEE1:GD02:PLO_DES', 0.0)
-                caput('VFC:FEE1:GD01:PHI_DES',
-                      self.ValfromJson(self.gdetData["GD1PressureHi"]))
-                caput('VFC:FEE1:GD02:PHI_DES',
-                      self.ValfromJson(self.gdetData["GD2PressureHi"]))
+
+                caput('VFC:FEE1:GD01:PHI_DES', self.setpoint["GD1PressureHi"])
+                caput('VFC:FEE1:GD02:PHI_DES', self.setpoint["GD2PressureHi"])
 
     # Ripped off from Lauren Alsberg, thanks yo!
     def get_hist(self, pv, timeStart, timeStop, *moreArgs):

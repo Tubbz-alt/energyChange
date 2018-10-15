@@ -4,7 +4,7 @@
 # Regions
 
 import sys
-import pyscore
+import pyScore
 from epics import caput
 
 
@@ -107,7 +107,7 @@ if __name__ == '__main__':
     configtime = sys.argv[3]
 
     # Connect to DB and retrieve values
-    score = pyscore.Pyscore()
+    score = pyScore.Pyscore()
 
     try:
         data = score.read_pvs(region, date, configtime)
@@ -127,4 +127,5 @@ if __name__ == '__main__':
     else:
         print 'ERROR(s) loading the following devices:', errorList
 
+    score.exit_score()
     sys.exit()
