@@ -8,7 +8,7 @@
 # feedback matrices and other things I haven't documented yet.
 
 from sys import exit, argv
-from PyQt4.QtCore import QTime, QDate
+from PyQt4.QtCore import QTime, QDate, QString
 from PyQt4.QtGui import QApplication, QMainWindow
 from epics import caget, caput
 from PyQt4 import QtCore, QtGui
@@ -862,7 +862,6 @@ class EnergyChange(QMainWindow):
 
         return hist
 
-
     def getPressureSetpoints(self):
 
         self.getAndLogHistory('VGBA:FEE1:240:P', "GD1PressureHi")
@@ -970,8 +969,20 @@ class EnergyChange(QMainWindow):
         positionNowM3S = caget('STEP:FEE1:1811:MOTR.RBV')
 
         # The setpoints are 4501um for AMO and -4503um for SXR
-        # TODO add ability to change soft mirror?
         self.mirror["amoPositionNeeded"] = positionDesiredM3S > 0
+
+        if self.mirror["softPositionNeeded"]:
+            txt = ("<P><FONT COLOR='#FFF'>Select desired soft x-ray hutch"
+                   "</FONT></P>")
+            desiredSoftHutch = QtGui.QMessageBox.question(self,
+                                                          "Hutch Selector", txt,
+                                                          "AMO", "SXR")
+            if desiredSoftHutch == 0:
+                self.mirror["amoPositionNeeded"] = True
+                positionDesiredM3S = 4501
+            else:
+                positionDesiredM3S = -4503
+
         self.mirror["sxrPositionNeeded"] = not self.mirror["amoPositionNeeded"]
 
         goingFromSXRToAMO = positionDesiredM3S > 0 > positionNowM3S
