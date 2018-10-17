@@ -11,25 +11,24 @@ from epics import caput
 ################################################################################
 # GET AND SET PVs, where the magic happens
 ################################################################################
-def setDevices(region, data):
-    # global errorList
+def setDevices(regionToLoad, scoreData):
     print("Setting devices... ")
     # List to hold pv names that didn't load properly
-    errorList = []
-    for device, setting in zip(data['despvs'], data['desvals']):
+    errors = []
+    for device, setting in zip(scoreData['despvs'], scoreData['desvals']):
         if ('NAN' in str(setting) and (("BDES" in device) or ("KDES" in device)
                                        or ("EDES" in device))):
 
             # These exist in undulator taper score config?
             if device != 'NA':
                 print 'NaN encountered! Not setting NaNs!!!'
-                errorList.append(device)
+                errors.append(device)
             continue
 
         # Magnets
         if "BDES" in device:
             # Only load quads from Undulator-LEM region
-            if (region == "Undulator-LEM") and ("QUAD" not in device):
+            if (regionToLoad == "Undulator-LEM") and ("QUAD" not in device):
                 continue
 
             attempt = caput(device, setting)
@@ -44,7 +43,7 @@ def setDevices(region, data):
             # If put fails, x should be Nonetype
             if not attempt:
                 # Add pv to errorlist if didn't load right
-                errorList.append(device)
+                errors.append(device)
 
             # Trim to BDES
             caput(device[:-4] + 'FUNC', '2')
@@ -61,10 +60,11 @@ def setDevices(region, data):
                 attempt = caput(device, setting)
 
                 if not attempt:
-                    errorList.append(device)
+                    errors.append(device)
 
-                motorVal = data['desvals'][data['despvs'].index(device[:-4]
-                                                                + 'TM1MOTOR')]
+                motorVal = scoreData['desvals'][
+                    scoreData['despvs'].index(device[:-4]
+                                              + 'TM1MOTOR')]
 
                 # Don't trim undulators in if they were out for config (also
                 # don't pull them out)
@@ -74,17 +74,17 @@ def setDevices(region, data):
                     caput(device[:-4] + 'TRIM.PROC', '1')
 
         # EDES for LEM
-        elif ("EDES" in device) and (region != "Undulator-LEM"):
+        elif ("EDES" in device) and (regionToLoad != "Undulator-LEM"):
             attempt = caput(device, setting)
 
             if not attempt:
-                errorList.append(device)
+                errors.append(device)
 
             if 'REFS' not in device:
                 # Set ECON
                 caput(device[:-4] + 'ECON', setting)
 
-    return errorList
+    return errors
 
 
 if __name__ == '__main__':

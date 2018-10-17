@@ -24,8 +24,13 @@ class Pyscore(object):
     #                              'despvs':[pv list],
     #                              'desvals':[list of values]}
     def read_pvs(self, region=None, date=None, time=None, pvs=None):
+        con = cx_Oracle.connect("/@MCCO")
+        cur = con.cursor()
 
         if not date or not time:
+            print 'Must specify a date & time!'
+            cur.close()
+            con.close()
             raise NameError('Must specify a date & time!')
 
         statement = ("select set_pt_sgnl_id,set_pt_sgnl_val,rb_sgnl_id,"
@@ -33,9 +38,9 @@ class Pyscore(object):
                      "where program_id = 1")
 
         startTime, stopTime = self.time_adjust(date, time)
-        stateDict = {"starttime": startTime, "stoptime": stopTime}
+        stateDict = {"startTime": startTime, "stopTime": stopTime}
 
-        statement += " and (mod_dte >= :starttime) and (mod_dte <= :stoptime)"
+        statement += " and (mod_dte >= :startTime) and (mod_dte <= :stopTime)"
 
         if region:
             stateDict['region'] = region
@@ -45,8 +50,8 @@ class Pyscore(object):
         try:
             if not pvs:
                 # No PVs specified so get everything using the base statement
-                self.cur.execute(statement, stateDict)
-                new_data = self.cur.fetchall()
+                cur.execute(statement, stateDict)
+                new_data = cur.fetchall()
                 data += new_data[:]
             else:
                 # One or more PVs specified so the query is trickier
@@ -54,22 +59,25 @@ class Pyscore(object):
                               "like :pvs)")
                 for pv in pvs:
                     stateDict['pvs'] = pv
-                    self.cur.execute(statement, stateDict)
-                    new_data = self.cur.fetchall()
+                    cur.execute(statement, stateDict)
+                    new_data = cur.fetchall()
                     data += new_data[:]
         except:
-            print 'SCORE error getting data'
+            print ('pyScore error in read_pvs - attempted executing: "'
+                   + statement + '" ' + stateDict)
+            cur.close()
+            con.close()
             raise
 
         if not data:
-            raise TypeError('No data obtained from SCORE database.')
+            print 'No data obtained from SCORE database.'
 
         else:
             # We successfully retrieved data so pack it into a dict and
             # return it to the user.
             data_dict = {"desPVs": [], "desVals": [], "actPVs": [],
                          "actVals": []}
-            
+
             for element in data:
                 data_dict["desPVs"].append(element[0])
                 data_dict["desVals"].append(self.sanitize_val(element[1]))
@@ -77,8 +85,10 @@ class Pyscore(object):
                 data_dict["actVals"].append(self.sanitize_val(element[3]))
 
             if not data_dict:
-                raise TypeError('No data output. Check PV keyword for typos')
+                print 'No data output. Check PV keyword for typos'
 
+            cur.close()
+            con.close()
             return data_dict
 
     # Returns a valid list of config dates based on the the user's energy
@@ -97,11 +107,11 @@ class Pyscore(object):
         clauses = ""
 
         if beg_date and end_date:
-            dstarttime, dstoptime = self.time_range_adjust(beg_date, end_date)
-            stateDict['starttime'] = dstarttime
-            stateDict['stoptime'] = dstoptime
-            clauses = "and (mod_dte >= :starttime) and (mod_dte <= :stoptime) "
-            
+            dstartTime, dstopTime = self.time_range_adjust(beg_date, end_date)
+            stateDict['startTime'] = dstartTime
+            stateDict['stopTime'] = dstopTime
+            clauses = "and (mod_dte >= :startTime) and (mod_dte <= :stopTime) "
+
         statement = ("select {cols} from score_snapshot_grp "
                      "where program_id = 1 "
                      "and equip_cat_id = :region {extra_filters}"
@@ -112,7 +122,7 @@ class Pyscore(object):
             self.cur.execute(statement, stateDict)
 
         except:
-            print 'SCORE error getting data'
+            print 'pyScore error in read_dates'
             raise
 
         return self.Etime_array(sample_snaps, energy, emin, emax, est_energy,
@@ -153,7 +163,7 @@ class Pyscore(object):
                     regionDict['%s' % pv] = None
 
         except:
-            print 'SCORE error getting data'
+            print 'pyScore error in pvs_in_score'
             raise
 
         return regionDict
@@ -249,9 +259,9 @@ class Pyscore(object):
         dtformat = datetime.datetime(int(date[0:4]), int(date[5:7]),
                                      int(date[8:]), int(time[0:2]),
                                      int(time[3:5]), int(time[6:]))
-        starttime = dtformat - datetime.timedelta(minutes=delta)
-        stoptime = dtformat + datetime.timedelta(minutes=delta)
-        return starttime, stoptime
+        startTime = dtformat - datetime.timedelta(minutes=delta)
+        stopTime = dtformat + datetime.timedelta(minutes=delta)
+        return startTime, stopTime
 
     # For read_dates method. Returns a format that the SQL code requires to
     # find configs between two dates.

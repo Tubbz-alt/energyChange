@@ -6,7 +6,7 @@
 import sys
 import pyScore
 import time
-# from os import popen
+from os import popen
 from epics import caget, caput
 
 
@@ -26,13 +26,17 @@ def setMatricesAndRestartFeedbacks(scoreData):
                 continue
 
             settingList = setting.split(';')
-            # formattedSetting = '200 '
-            #
-            # for element in settingList:
-            #     formattedSetting += element + ' '
 
-            caput(device, settingList)
-            # popen('caput -a ' + device + ' ' + formattedSetting)
+            try:
+                caput(device, settingList)
+            except:
+                print "error setting matrices using pyepics"
+                formattedSetting = '200 '
+
+                for element in settingList:
+                    formattedSetting += element + ' '
+
+                popen('caput -a ' + device + ' ' + formattedSetting)
 
     time.sleep(1.5)
 
