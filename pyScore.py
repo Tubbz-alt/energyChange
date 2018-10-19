@@ -29,8 +29,7 @@ class Pyscore(object):
 
         if not date or not time:
             print 'Must specify a date & time!'
-            cur.close()
-            con.close()
+            self.closeConnection(con, cur)
             raise NameError('Must specify a date & time!')
 
         statement = ("select set_pt_sgnl_id,set_pt_sgnl_val,rb_sgnl_id,"
@@ -65,8 +64,7 @@ class Pyscore(object):
         except:
             print ('pyScore error in read_pvs - attempted executing: "'
                    + statement + '" ' + stateDict)
-            cur.close()
-            con.close()
+            self.closeConnection(con, cur)
             raise
 
         if not data:
@@ -87,9 +85,13 @@ class Pyscore(object):
             if not data_dict:
                 print 'No data output. Check PV keyword for typos'
 
-            cur.close()
-            con.close()
+            self.closeConnection(con, cur)
             return data_dict
+
+    @staticmethod
+    def closeConnection(con, cur):
+        cur.close()
+        con.close()
 
     # Returns a valid list of config dates based on the the user's energy
     # specification and time range specification. (see example.py for details)
@@ -327,6 +329,5 @@ class Pyscore(object):
     # Closes the connection to the SCORE Oracle database. Done after each main
     # method above.
     def exit_score(self):
-        self.cur.close()
-        self.con.close()
+        self.closeConnection(self.con, self.cur)
         return

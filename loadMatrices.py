@@ -8,6 +8,7 @@ import pyScore
 import time
 from os import popen
 from epics import caget, caput
+from numpy import array
 
 
 ################################################################################
@@ -15,7 +16,7 @@ from epics import caget, caput
 ################################################################################
 def setMatricesAndRestartFeedbacks(scoreData):
 
-    for device, setting in zip(scoreData['despvs'], scoreData['desvals']):
+    for device, setting in zip(scoreData['desPVs'], scoreData['desVals']):
 
         if device in ["FBCK:FB03:TR01:FMATRIX", "FBCK:FB03:TR01:GMATRIX",
                       "FBCK:FB03:TR04:FMATRIX", "FBCK:FB03:TR04:GMATRIX",
@@ -28,7 +29,7 @@ def setMatricesAndRestartFeedbacks(scoreData):
             settingList = setting.split(';')
 
             try:
-                caput(device, settingList)
+                caput(device, [float(x) for x in settingList[:200]])
             except:
                 print "error setting matrices using pyepics"
                 formattedSetting = '200 '

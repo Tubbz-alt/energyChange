@@ -12,10 +12,10 @@ from epics import caput
 # GET AND SET PVs, where the magic happens
 ################################################################################
 def setDevices(regionToLoad, scoreData):
-    print("Setting devices... ")
+    print("Setting devices for " + regionToLoad + "... ")
     # List to hold pv names that didn't load properly
     errors = []
-    for device, setting in zip(scoreData['despvs'], scoreData['desvals']):
+    for device, setting in zip(scoreData['desPVs'], scoreData['desVals']):
         if ('NAN' in str(setting) and (("BDES" in device) or ("KDES" in device)
                                        or ("EDES" in device))):
 
@@ -53,6 +53,7 @@ def setDevices(regionToLoad, scoreData):
 
         # Undulator segments
         elif "KDES" in device:
+            # SXRSS, HXRSS, and Delta
             if (":950" not in device and "1650" not in device
                     and "3350" not in device):
 
@@ -62,9 +63,8 @@ def setDevices(regionToLoad, scoreData):
                 if not attempt:
                     errors.append(device)
 
-                motorVal = scoreData['desvals'][
-                    scoreData['despvs'].index(device[:-4]
-                                              + 'TM1MOTOR')]
+                index = scoreData['desPVs'].index(device[:-4] + 'TM1MOTOR')
+                motorVal = scoreData['desVals'][index]
 
                 # Don't trim undulators in if they were out for config (also
                 # don't pull them out)
@@ -83,6 +83,10 @@ def setDevices(regionToLoad, scoreData):
             if 'REFS' not in device:
                 # Set ECON
                 caput(device[:-4] + 'ECON', setting)
+
+    if errors:
+        print ("Error in loadScore loading region " + region + " for devices: "
+               + errors)
 
     return errors
 

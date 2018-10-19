@@ -29,7 +29,7 @@ from loadScore import setDevices
 from loadMatrices import setMatricesAndRestartFeedbacks
 from numpy import array
 
-from energyChange_UI import echg_UI
+from energyChange_UI import Ui_EnergyChange
 
 ENERGY_BOUNDARY = 2050
 
@@ -39,8 +39,8 @@ ENERGY_BOUNDARY = 2050
 class EnergyChange(QMainWindow):
     def __init__(self, parent=None):
         QMainWindow.__init__(self, parent)
-        self.cssfile = "/usr/local/lcls/tools/python/toolbox/echg/style.css"
-        self.ui = echg_UI()
+        self.cssFile = "/usr/local/lcls/tools/python/toolbox/echg/style.css"
+        self.ui = Ui_EnergyChange()
         self.ui.setupUi(self)
         self.ui.scoretable.setSelectionMode(QtGui.QAbstractItemView
                                             .SingleSelection)
@@ -58,48 +58,32 @@ class EnergyChange(QMainWindow):
         # want disabled initially as nothing has been loaded yet
         self.ui.restoreButton.setDisabled(True)
 
-        timeGuiLaunched = datetime.now()
-        timeGuiLaunchedStr = str(timeGuiLaunched)
-
-        year = timeGuiLaunchedStr[0:4]
-        month = timeGuiLaunchedStr[5:7]
-        day = timeGuiLaunchedStr[8:10]
-
-        calendaradj = QDate(int(year), int(month), int(day))
-
-        # Set current date for GUI calendar
-        self.ui.calendarWidget.setSelectedDate(calendaradj)
-
-        timeGuiLaunched = timeGuiLaunchedStr[11:16]
-
-        # Set current time for GUI time field
-        self.ui.timeEdit.setTime(QTime(int(timeGuiLaunched[0:2]),
-                                       int(timeGuiLaunched[3:5])))
+        self.setupCalendar()
 
         # Instatiate Tony's python score class
         self.scoreObject = Pyscore()
 
         greetings = ["Hi! Aren't you the cutest lil thing!",
-                     "Hiiii!  I've missed you beautiful! <3",
-                     "Came crawling back, eh?  Of course you did.",
+                     "Hiiii! I've missed you beautiful! <3",
+                     "Came crawling back, eh? Of course you did.",
                      "Finally decided to do your job huh?",
                      "Hey Hey Hey! I missed you!",
-                     "I knew you'd be back.  I'm so excited!",
-                     "I love you- your smile is the reason I launch!",
+                     "I knew you'd be back. I'm so excited!",
+                     "I love you - your smile is the reason I launch!",
                      "Hi sunshine, you light up my life!",
-                     "I love turtles.  But I hate baby turtles.",
+                     "I love turtles. But I hate baby turtles.",
                      "Energy change- getting you loaded since 2014",
-                     "Don't ever change.  That's my job!",
+                     "Don't ever change. That's my job!",
                      "For a failure, you sure seem chipper!",
                      "It's sad that this is the highlight of your day.",
                      "Can't wait for FACET 2...",
                      "You're special and people like you!",
                      "Master beats me if I'm a bad GUI :-(",
-                     "You can do anything!  Reach for the stars!",
+                     "You can do anything! Reach for the stars!",
                      "You're a capable human who does stuff!",
-                     "You excel at simple tasks!  Yeah!",
+                     "You excel at simple tasks! Yeah!",
                      "If I were more than a GUI you'd make me blush!",
-                     "Delivering to CXrs or MC?  Whatever who cares.",
+                     "Delivering to CXrs or MC? Whatever who cares.",
                      "You still work here? Sorry.",
                      "Why did kamikazes wear helmets?",
                      "If you do a job too well, you'll get stuck with it.",
@@ -110,7 +94,7 @@ class EnergyChange(QMainWindow):
                      "Way to show up for your shifts! Yeah!",
                      "You are great at clicking things!",
                      "Miss the SCP yet? I don't!",
-                     "Oh look at you!  You're precious!",
+                     "Oh look at you! You're precious!",
                      "You excel at mediocrity!",
                      "Regret any of your life decisions yet?",
                      "I thought you were quitting?!?",
@@ -120,8 +104,8 @@ class EnergyChange(QMainWindow):
                      "Don't go for your dreams, you will fail!",
                      "You're the reason the gene pool needs a lifeguard!",
                      "Do you still love nature, despite what it did to you?",
-                     "Ordinary people live and learn.  You just live.",
-                     "Way to be physically present for 8 hours!  Yeah!",
+                     "Ordinary people live and learn. You just live.",
+                     "Way to be physically present for 8 hours! Yeah!",
                      "Hello, Clarice..."]
 
         self.ui.statusText.setText(greetings[randint(0, len(greetings) - 1)])
@@ -137,7 +121,8 @@ class EnergyChange(QMainWindow):
                           "offsetPMT361": None, "offsetPMT362": None,
                           "electronEnergyDesired": None,
                           "electronEnergyCurrent": None,
-                          "photonEnergyDesired": None, "photonEnergyCurrent": None,
+                          "photonEnergyDesired": None,
+                          "photonEnergyCurrent": None,
                           "xcavLaunchX": None, "xcavLaunchY": None,
                           "BC1PeakCurrent": None, "BC1LeftJaw": None,
                           "BC1RightJaw": None, "BC2Mover": None,
@@ -168,8 +153,8 @@ class EnergyChange(QMainWindow):
                           "archiveStop": None, "changeStarted": None}
 
         # valsObtained is boolean representing whether user has obtained archive
-        # data for selected time.  Scoreproblem is boolean representing if
-        # there was a problem loading some BDES.  Abort isn't used!?!?
+        # data for selected time. Scoreproblem is boolean representing if
+        # there was a problem loading some BDES.
         # progress keeps track of progress number (between 0 and 100)
         self.diagnostics = {"progress": 0, "valsObtained": False,
                             "scoreProblem": False, "threads": []}
@@ -181,6 +166,24 @@ class EnergyChange(QMainWindow):
         self.getScores()
         self.makeConnections()
         self.ui.startButton.setEnabled(False)
+
+    def setupCalendar(self):
+        timeGuiLaunched = datetime.now()
+        timeGuiLaunchedStr = str(timeGuiLaunched)
+
+        year = timeGuiLaunchedStr[0:4]
+        month = timeGuiLaunchedStr[5:7]
+        day = timeGuiLaunchedStr[8:10]
+
+        dateLaunched = QDate(int(year), int(month), int(day))
+
+        # Set current date for GUI calendar
+        self.ui.calendarWidget.setSelectedDate(dateLaunched)
+        timeGuiLaunched = timeGuiLaunchedStr[11:16]
+
+        # Set current time for GUI time field
+        self.ui.timeEdit.setTime(QTime(int(timeGuiLaunched[0:2]),
+                                       int(timeGuiLaunched[3:5])))
 
     # Connect GUI elements to functions
     def makeConnections(self):
@@ -198,7 +201,7 @@ class EnergyChange(QMainWindow):
         # Restores displayed complement to archived complement
         self.ui.restoreButton.clicked.connect(self.restoreComplement)
 
-        # reinitButton grabs score configs from selected time -14days and
+        # reinitButton grabs score configs from selected time -28days and
         # updates config list with configs that are found
         self.ui.reinitButton.clicked.connect(self.getScores)
 
@@ -232,7 +235,7 @@ class EnergyChange(QMainWindow):
     # Make gui SO PRETTY!
     def loadStyleSheet(self):
         try:
-            with open(self.cssfile, "r") as f:
+            with open(self.cssFile, "r") as f:
                 self.setStyleSheet(f.read())
 
         # If my file disappears for some reason, load crappy black color scheme
@@ -263,13 +266,59 @@ class EnergyChange(QMainWindow):
     def start(self):
 
         # valsObtained variable is used to tell if user has gotten archived
-        # values from a certain time yet.  This section simply grabs values and
+        # values from a certain time yet. This section simply grabs values and
         # doesn't change anything (runs when button says 'get values')
         if not self.diagnostics["valsObtained"]:
             return self.getValues()
 
         else:
             self.changeEnergy()
+
+    def getValues(self):
+
+        self.ui.restoreButton.setDisabled(True)
+        self.formatTime()
+
+        self.printStatusMessage("<b>Getting values...</b>")
+        self.updateProgress(5 - self.diagnostics["progress"])
+
+        QApplication.processEvents()
+
+        self.ui.statusText.repaint()
+        self.getEnergy()
+        self.get6x6()
+        self.getKlys()
+        self.getGdet()
+
+        # Gets random setpoints- feedback setpoints, pulse stacker,
+        # laser heater waveplate etc.
+        self.getSetpoints()
+
+        self.getBC2Mover()
+        self.getMirrors()
+        self.diagnostics["valsObtained"] = True
+
+        energyDiff = (self.setpoints["electronEnergyCurrent"]
+                      - self.setpoints["electronEnergyDesired"])
+
+        if energyDiff > 0.005 and self.ui.stdz_cb.isChecked():
+            self.printStatusMessage("<b>I will standardize!!!</b>", False)
+
+        self.ui.startButton.setText("Start the change!")
+
+        message = ("Will switch to "
+                   + str(round(self.setpoints["photonEnergyDesired"], 1))
+                   + "eV ("
+                   + str(round(self.setpoints["electronEnergyDesired"], 2))
+                   + "GeV)")
+
+        self.printStatusMessage(message, True)
+
+        # We have values and are ready for the energy change;
+        # set this flag to True
+        self.diagnostics["valsObtained"] = True
+
+        return
 
     ########################################################################
     # Where the magic happens (user has obtained values, time to do the
@@ -426,54 +475,6 @@ class EnergyChange(QMainWindow):
         self.ui.statusText.repaint()
         self.updateProgress(5 - self.diagnostics["progress"])
 
-    def getValues(self):
-
-        self.ui.restoreButton.setDisabled(True)
-        self.formatTime()
-
-        self.printStatusMessage("<b>Getting values...</b>")
-        self.updateProgress(5 - self.diagnostics["progress"])
-
-        QApplication.processEvents()
-
-        self.ui.statusText.repaint()
-        self.getEnergy()
-        self.get6x6()
-        self.getKlys()
-        self.getGdet()
-
-        # Gets random setpoints- feedback setpoints, pulse stacker,
-        # laser heater waveplate etc.
-        self.getSetpoints()
-
-        self.getBC2Mover()
-        self.getMirrors()
-        self.diagnostics["valsObtained"] = True
-
-        energyDiff = (self.setpoints["electronEnergyCurrent"]
-                      - self.setpoints["electronEnergyDesired"])
-
-        if energyDiff > 0.005 and self.ui.stdz_cb.isChecked():
-            self.printStatusMessage("<b>I will standardize!!!</b>", False)
-
-        self.ui.startButton.setText("Start the change!")
-
-        message = ("Will switch to "
-                   + str(round(self.setpoints["photonEnergyDesired"], 1))
-                   + "eV ("
-                   + str(round(self.setpoints["electronEnergyDesired"], 2))
-                   + "GeV)")
-
-        self.printStatusMessage(message, True)
-
-        # We have values and are ready for the energy change;
-        # set this flag to True
-        self.diagnostics["valsObtained"] = True
-        # self.loadScores()
-        # sleep(1)
-        # self.checkScoreLoads()
-        return
-
     # If user clicks calendar or changes time, revert to initial state where
     # pressing button will only get archived values in preparation for energy
     # change
@@ -504,6 +505,8 @@ class EnergyChange(QMainWindow):
             klysStatus = self.klystronComplement["desired"][sector][station]
             item = QtGui.QTableWidgetItem()
 
+            brush = QtGui.QBrush(QtGui.QColor.black)
+
             if klysStatus == 1:
                 self.klystronComplement["desired"][sector][station] = 0
                 brush = QtGui.QBrush(QtGui.QColor(255, 0, 0))
@@ -511,9 +514,7 @@ class EnergyChange(QMainWindow):
                 self.klystronComplement["desired"][sector][station] = 1
                 brush = QtGui.QBrush(QtGui.QColor(100, 255, 100))
 
-            brush.setStyle(QtCore.Qt.SolidPattern)
-            item.setBackground(brush)
-            self.ui.tableWidget.setItem(row, column, item)
+            self.paintCell(row, column, item, brush)
 
             self.ui.restoreButton.setDisabled(False)
 
@@ -540,14 +541,14 @@ class EnergyChange(QMainWindow):
                 klysStatus = self.klystronComplement["desired"][sector][station]
                 item = QtGui.QTableWidgetItem()
 
+                brush = QtGui.QBrush(QtGui.QColor.black)
+
                 if klysStatus == 0:
                     brush = QtGui.QBrush(QtGui.QColor(255, 0, 0))
                 elif klysStatus == 1:
                     brush = QtGui.QBrush(QtGui.QColor(100, 255, 100))
 
-                brush.setStyle(QtCore.Qt.SolidPattern)
-                item.setBackground(brush)
-                self.ui.tableWidget.setItem(station - 1, sector - 21, item)
+                self.paintCell(station - 1, sector - 21, item, brush)
 
         self.ui.restoreButton.setDisabled(True)
 
@@ -606,6 +607,7 @@ class EnergyChange(QMainWindow):
                                           - timedelta(minutes=1))
 
         timeStop = self.timestamp["archiveStart"] + timedelta(minutes=1)
+        # noinspection PyCallByClass
         self.timestamp["archiveStop"] = (str(datetime.isoformat(timeStop))
                                          + '.000Z')
 
@@ -774,12 +776,13 @@ class EnergyChange(QMainWindow):
 
         self.updateProgress(10)
 
+    def paintCell(self, row, column, item, brush):
+        brush.setStyle(QtCore.Qt.SolidPattern)
+        item.setBackground(brush)
+        self.ui.tableWidget.setItem(row, column, item)
+
     # Get klystron complement from time of interest
     def getKlys(self):
-        def paintCell(row, column, item, brush):
-            brush.setStyle(QtCore.Qt.SolidPattern)
-            item.setBackground(brush)
-            self.ui.tableWidget.setItem(row, column, item)
 
         QApplication.processEvents()
         self.klystronComplement["desired"] = {}
@@ -809,20 +812,19 @@ class EnergyChange(QMainWindow):
                 else:
                     brush = QtGui.QBrush(QtGui.QColor(255, 0, 0))
 
-                paintCell(row, column, item, brush)
+                self.paintCell(row, column, item, brush)
 
             self.klystronComplement["desired"][column + 21] = stations
             self.updateProgress(5)
 
         # "Remove" 24-7 and 24-8
         self.klystronComplement["desired"][24][7] = None
-        self.klystronComplement["desired"][24][8] = None
+        # self.klystronComplement["desired"][24][8] = None
 
         item = QtGui.QTableWidgetItem()
         # I can't figure out how to get the grey color and I don't care enough
         brush = QtGui.QBrush(QtGui.QColor.black)
-
-        paintCell(6, 3, item, brush)
+        self.paintCell(6, 3, item, brush)
 
         # Copy list to have an 'original' list to revert to if user changes
         # complement and then wants to go back to original
@@ -870,7 +872,7 @@ class EnergyChange(QMainWindow):
     def getAndLogValue(self, pv, key, updateSetpoint=True, getHistorical=True):
         if getHistorical:
             val = self.get_hist(pv, self.timestamp["archiveStart"],
-                                 self.timestamp["archiveStop"], 'json')
+                                self.timestamp["archiveStop"], 'json')
             val = self.valFromJson(val)
         else:
             val = caget(pv)
@@ -990,6 +992,7 @@ class EnergyChange(QMainWindow):
         if self.mirrorStatus["softPositionNeeded"]:
             txt = ("<P><FONT COLOR='#FFF'>Select desired soft x-ray hutch"
                    "</FONT></P>")
+            # noinspection PyCallByClass
             desiredSoftHutch = QtGui.QMessageBox.question(self,
                                                           "Hutch Selector", txt,
                                                           "AMO", "SXR")
@@ -1072,7 +1075,7 @@ class EnergyChange(QMainWindow):
         # Put message in message log that scores are being loaded
         for region in regionList:
             message = ("Loading SCORE from " + self.scoreInfo["dateChosen"]
-                       + " " + self.scoreInfo["timeChosen"] + " for region "
+                       + " " + self.scoreInfo["timeChosen"] + " for "
                        + region)
 
             self.printStatusMessage(message)
@@ -1080,20 +1083,22 @@ class EnergyChange(QMainWindow):
 
             # Have a thread subclass to handle this (defined at bottom of this
             # file); normal threading class returns NONE
-            t = ThreadWithReturnValue(target=self.scoreThread, args=(region,))
+            t = ThreadWithReturnValue(target=self.scoreThread,
+                                      args=(region,))
             self.diagnostics["threads"].append(t)
 
         for thread in self.diagnostics["threads"]:
             thread.start()
 
     def checkScoreLoads(self):
+        QApplication.processEvents()
+        self.printStatusMessage("Waiting for SCORE regions to load...")
+
         try:
             for thread in self.diagnostics["threads"]:
                 # I want to wait for each thread to finish execution so the
                 # score completion/failure messages come out together
-                # TODO what does join return?
                 status, region = thread.join()
-                print "thread status: " + str(status)
                 if status == 0:
                     self.printStatusMessage('Set/trimmed devices for ' + region)
                 else:
@@ -1114,13 +1119,20 @@ class EnergyChange(QMainWindow):
     # Thread function for loading each individual score region
     def scoreThread(self, region):
         try:
-            data = self.scoreObject.read_pvs(region, self.scoreInfo["dateChosen"],
-                                             self.scoreInfo["timeChosen"] + ':00')
+            data = self.scoreObject.read_pvs(region,
+                                             self.scoreInfo["dateChosen"],
+                                             self.scoreInfo["timeChosen"]
+                                             + ':00')
+        except:
+            print "Error in scoreThread getting data for " + region
+            return 1, region
+
+        try:
             # return 0, region
             errors = setDevices(region, data)
-            return (len(errors) if errors else 1), region
+            return (len(errors) if errors is not None else 1), region
         except:
-            print "error getting data"
+            print "Error in scoreThread setting data for " + region
             return 1, region
 
     # Check that bend dump has finished trimming and then start standardize
@@ -1204,8 +1216,9 @@ class EnergyChange(QMainWindow):
         self.printStatusMessage('Setting 6x6 complete')
 
     def setAllTheSetpoints(self):
+        QApplication.processEvents()
         if self.ui.matrices_cb.isChecked():
-            self.printStatusMessage('Sneding LTU/UND matrices to feedbacks')
+            self.printStatusMessage('Sending LTU/UND matrices to feedbacks')
             data = self.scoreObject.read_pvs("Feedback-All",
                                              self.scoreInfo["dateChosen"],
                                              self.scoreInfo["timeChosen"]
@@ -1358,12 +1371,13 @@ class EnergyChange(QMainWindow):
     ############################################################################
 
     def caputSetpoint(self, pv, key):
-        self.printStatusMessage("Setting " + key + "to: "
+        self.printStatusMessage("Setting " + key + " to: "
                                 + str(self.setpoints[key]))
         caput(pv, self.setpoints[key])
 
     # Set gas detector recipe/pressure and pmt voltages
     def setGdet(self):
+        QApplication.processEvents()
         if self.ui.pmt_cb.isChecked():
             self.printStatusMessage('Setting PMT voltages/Calibration/Offset')
             QApplication.processEvents()
@@ -1396,8 +1410,9 @@ class EnergyChange(QMainWindow):
 
     def setPressuresForSoftMirrorChange(self):
         # Mirror change to soft setting
-        if self.mirrorStatus["needToChangeM1"] and self.mirrorStatus[
-            "softPositionNeeded"]:
+        if (self.mirrorStatus["needToChangeM1"]
+                and self.mirrorStatus["softPositionNeeded"]):
+
             if self.ui.recipe_cb.isChecked():
                 self.printStatusMessage('Changing recipe from high to low')
                 QApplication.processEvents()
@@ -1446,6 +1461,7 @@ class EnergyChange(QMainWindow):
         jdata = load(req)
         return jdata
 
+    # noinspection PyUnusedLocal
     @staticmethod
     def format_url(pv, timeStart, timeStop, *moreArgs):
         machine = 'lcls'
