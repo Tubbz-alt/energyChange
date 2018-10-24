@@ -16,8 +16,10 @@ from time import sleep
 from datetime import datetime, timedelta
 from dateutil import parser
 from subprocess import Popen
+
 # noinspection PyCompatibility
 from urllib2 import urlopen
+
 from json import load
 from threading import Thread
 from pytz import utc, timezone
@@ -272,7 +274,17 @@ class EnergyChange(QMainWindow):
             return self.getValues()
 
         else:
-            self.changeEnergy()
+            txt = ("<P><FONT COLOR='#FFF'>Are you sure?"
+                   "</FONT></P>")
+            # noinspection PyCallByClass
+            reallyWantToChange = QtGui.QMessageBox.question(self,
+                                                            "Sanity Check", txt,
+                                                            "No", "Yes")
+            if reallyWantToChange:
+                self.changeEnergy()
+
+            else:
+                self.printStatusMessage("Energy change aborted")
 
     def getValues(self):
 
@@ -408,6 +420,9 @@ class EnergyChange(QMainWindow):
                                    + "-</i> " + message)
         if printToStatus:
             self.ui.statusText.setText(message)
+
+        self.ui.statusText.repaint()
+        QApplication.processEvents()
 
     def implementSelectedChanges(self):
 
@@ -1091,7 +1106,6 @@ class EnergyChange(QMainWindow):
             thread.start()
 
     def checkScoreLoads(self):
-        QApplication.processEvents()
         self.printStatusMessage("Waiting for SCORE regions to load...")
 
         try:
@@ -1482,12 +1496,12 @@ class ThreadWithReturnValue(Thread):
         if kwargs is None:
             kwargs = {}
 
-        Thread.__init__(self, group, target, name, args, kwargs, Verbose)
-
         self._Thread__kwargs = None
         self._Thread__args = None
         self._Thread__target = None
         self._return = None
+
+        Thread.__init__(self, group, target, name, args, kwargs, Verbose)
 
     def run(self):
         if self._Thread__target is not None:
@@ -1504,7 +1518,7 @@ def main():
     window = EnergyChange()
 
     # Close the SCORE connection
-    # app.aboutToQuit.connect(window.scoreObject.exit_score)
+    app.aboutToQuit.connect(window.scoreObject.exit_score)
 
     window.show()
     exit(app.exec_())
