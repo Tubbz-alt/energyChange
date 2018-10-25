@@ -8,7 +8,6 @@ import pyScore
 import time
 from os import popen
 from epics import caget, caput
-from numpy import array
 
 
 ################################################################################
@@ -31,7 +30,8 @@ def setMatricesAndRestartFeedbacks(scoreData):
             try:
                 caput(device, [float(x) for x in settingList[:200]])
             except:
-                print "error setting matrices using pyepics"
+                print ("error setting matrices using pyepics - using popen "
+                       "instead")
                 formattedSetting = '200 '
 
                 for element in settingList:
