@@ -6,7 +6,7 @@ import cx_Oracle
 import re
 
 
-class Pyscore(object):
+class PyScore(object):
     def __init__(self):
         os.environ["TWO_TASK"] = "MCCO"
         os.environ["TNS_ADMIN"] = "/usr/local/lcls/tools/oracle/wallets/score"

@@ -16,29 +16,15 @@ from time import sleep
 from datetime import datetime, timedelta
 from dateutil import parser
 from subprocess import Popen
-
-# noinspection PyCompatibility
-from urllib2 import urlopen
-
-from json import load
-from threading import Thread
 from pytz import utc, timezone
 from message import log
 from random import randint
-from pyScore import Pyscore
+from pyScore import PyScore
 from copy import deepcopy
 from numpy import array
-from energyChangeUtils import (greetings, setDevices,
-                               setMatricesAndRestartFeedbacks)
+import energyChangeUtils as Utils
 
 from energyChange_UI import Ui_EnergyChange
-
-ENERGY_BOUNDARY = 2050
-
-
-class Struct:
-    def __init__(self, **kwds):
-        self.__dict__.update(kwds)
 
 
 # Where the magic happens, the main class that runs this baby!
@@ -68,13 +54,15 @@ class EnergyChange(QMainWindow):
         self.setupCalendar()
 
         # Instatiate python score class
-        self.scoreObject = Pyscore()
+        self.scoreObject = PyScore()
 
-        self.ui.statusText.setText(greetings[randint(0, len(greetings) - 1)])
+        self.ui.statusText.setText(Utils.greetings[randint(0,
+                                                           len(Utils.greetings)
+                                                           - 1)])
         self.loadStyleSheet()
 
         self.setpoints = {}
-        self.populateSetpoints()
+        Utils.populateSetpoints(self.setpoints)
 
         self.scoreInfo = {"comments": None, "titles": None, "times": None,
                           "dateChosen": None, "timeChosen": None}
@@ -105,73 +93,6 @@ class EnergyChange(QMainWindow):
         self.getScores()
         self.makeConnections()
         self.ui.startButton.setEnabled(False)
-
-    def populateSetpoints(self):
-
-        def makePV(key, getPVName, setPVName, getHistorical=True):
-            self.setpoints[key] = Struct(val=None, getPV=getPVName,
-                                         setPV=setPVName,
-                                         historical=getHistorical)
-
-        def makeDoublePV(key, pvName, getHistorical=True):
-            return makePV(key, pvName, pvName, getHistorical)
-
-        for PMT in ["241", "242", "361", "362"]:
-            makeDoublePV("voltagePMT" + PMT, "HVCH:FEE1:" + PMT + ":VoltageSet")
-            makeDoublePV("calibrationPMT" + PMT, "GDET:FEE1:" + PMT + ":CALI")
-            makeDoublePV("offsetPMT" + PMT, "GDET:FEE1:" + PMT + ":OFFS")
-
-        getPV = "VGBA:FEE1:240:P"
-        for GD in ["GD01", "GD02"]:
-            makePV(GD + "PressureHi", getPV, "VFC:FEE1:" + GD + ":PHI_DES")
-            makePV(GD + "PressureLo", getPV, "VFC:FEE1:" + GD + ":PLO_DES")
-
-        electronEnergyPV = "BEND:DMP1:400:BDES"
-        makePV("electronEnergyDesired", electronEnergyPV, None)
-        makePV("electronEnergyCurrent", electronEnergyPV, None, False)
-
-        photonEnergyPV = "SIOC:SYS0:ML00:AO627"
-        makePV("photonEnergyDesired", photonEnergyPV, None)
-        makePV("photonEnergyCurrent", photonEnergyPV, None, False)
-
-        makeDoublePV("xcavLaunchX", "FBCK:FB01:TR03:S1DES")
-        makeDoublePV("xcavLaunchY", "FBCK:FB01:TR03:S2DES")
-
-        makeDoublePV("BC1PeakCurrent", "FBCK:FB04:LG01:S3DES")
-        makeDoublePV("BC1LeftJaw", "COLL:LI21:235:MOTR.VAL")
-        makeDoublePV("BC1RightJaw", "COLL:LI21:236:MOTR.VAL")
-
-        makeDoublePV("BC2Mover", "BMLN:LI24:805:MOTR.VAL")
-        makeDoublePV("BC2Phase", "SIOC:SYS0:ML00:AO063")
-
-        makeDoublePV("amplitudeL1X", "ACCL:LI21:180:L1X_ADES")
-        makeDoublePV("phaseL1X", "ACCL:LI21:180:L1X_PDES")
-
-        makeDoublePV("amplitudeL2", "ACCL:LI22:1:ADES")
-        makeDoublePV("peakCurrentL2", "FBCK:FB04:LG01:S5DES")
-        makeDoublePV("phaseL2", "ACCL:LI22:1:PDES")
-
-        makeDoublePV("amplitudeL3", "ACCL:LI25:1:ADES")
-        makeDoublePV("phaseL3", "ACCL:LI25:1:PDES")
-
-        makeDoublePV("waveplateCH1", "WPLT:IN20:459:CH1_ANGLE")
-        makeDoublePV("heaterWaveplate1", "WPLT:LR20:220:LHWP_ANGLE")
-        makeDoublePV("heaterWaveplate2", "WPLT:LR20:230:LHWP_ANGLE")
-        makeDoublePV("waveplateVHC", "WPLT:IN20:467:VHC_ANGLE")
-
-        makeDoublePV("pulseStackerDelay", "PSDL:LR20:117:TDES")
-        makeDoublePV("pulseStackerWaveplate", "WPLT:LR20:117:PSWP_ANGLE")
-
-        makeDoublePV("undLaunchPosX", "FBCK:FB03:TR04:S1DES")
-        makeDoublePV("undLaunchAngX", "FBCK:FB03:TR04:S2DES")
-        makeDoublePV("undLaunchPosY", "FBCK:FB03:TR04:S3DES")
-        makeDoublePV("undLaunchAngY", "FBCK:FB03:TR04:S4DES")
-
-        makeDoublePV("vernier", "FBCK:FB04:LG01:DL2VERNIER")
-
-        pvPositionM3S = "STEP:FEE1:1811:MOTR.RBV"
-        makePV("positionDesiredM3S", pvPositionM3S, None)
-        makePV("positionCurrentM3S", pvPositionM3S, None, False)
 
     def setupCalendar(self):
         timeGuiLaunched = datetime.now()
@@ -330,13 +251,13 @@ class EnergyChange(QMainWindow):
         self.ui.startButton.clicked.connect(self.start)
 
         # Opens STDZ GUI
-        self.ui.stdzButton.clicked.connect(self.stdz)
+        self.ui.stdzButton.clicked.connect(Utils.stdz)
 
         # Opens SCORE GUI
-        self.ui.scoreButton.clicked.connect(self.score)
+        self.ui.scoreButton.clicked.connect(Utils.score)
 
         # Opens Model Manager GUI
-        self.ui.modelButton.clicked.connect(self.modelMan)
+        self.ui.modelButton.clicked.connect(Utils.modelMan)
 
         # Restores displayed complement to archived complement
         self.ui.restoreButton.clicked.connect(self.restoreComplement)
@@ -470,9 +391,9 @@ class EnergyChange(QMainWindow):
 
     def getAndLogVal(self, key, pvStruct, getHistorical, updateSetpoint=True):
         if getHistorical:
-            val = self.get_hist(pvStruct.getPV, self.timestamp["archiveStart"],
-                                self.timestamp["archiveStop"], 'json')
-            val = self.valFromJson(val)
+            val = Utils.get_hist(pvStruct.getPV, self.timestamp["archiveStart"],
+                                 self.timestamp["archiveStop"], 'json')
+            val = Utils.valFromJson(val)
         else:
             val = caget(pvStruct.getPV)
 
@@ -490,12 +411,12 @@ class EnergyChange(QMainWindow):
 
         # This PV returns a flattened truth table that starts at 20-1 and ends
         # at 31-2 (inclusive)
-        complementDesired = self.get_hist("CUDKLYS:MCC0:ONBC1SUMY",
+        complementDesired = Utils.get_hist("CUDKLYS:MCC0:ONBC1SUMY",
                                           self.timestamp["archiveStart"],
                                           self.timestamp["archiveStop"], 'json')
 
         # Remove sectors 20 and 31
-        complementDesired = self.valFromJson(complementDesired)[8:88]
+        complementDesired = Utils.valFromJson(complementDesired)[8:88]
 
         # Reshape as a 2D array to make it easier to understand
         complementDesired = array(complementDesired).reshape(10, 8)
@@ -536,18 +457,18 @@ class EnergyChange(QMainWindow):
     def getMirrors(self):
 
         goingFromHardToSoft = (self.setpoints["photonEnergyCurrent"].val
-                               > ENERGY_BOUNDARY
+                               > Utils.ENERGY_BOUNDARY
                                > self.setpoints["photonEnergyDesired"].val)
 
         goingFromSoftToHard = (self.setpoints["photonEnergyDesired"].val
-                               > ENERGY_BOUNDARY
+                               > Utils.ENERGY_BOUNDARY
                                > self.setpoints["photonEnergyCurrent"].val)
 
         self.mirrorStatus["needToChangeM1"] = (goingFromHardToSoft
                                                or goingFromSoftToHard)
 
         wantHardXrays = (self.setpoints["photonEnergyDesired"].val
-                         > ENERGY_BOUNDARY)
+                         > Utils.ENERGY_BOUNDARY)
 
         self.mirrorStatus["hardPositionNeeded"] = wantHardXrays
         self.mirrorStatus["softPositionNeeded"] = not wantHardXrays
@@ -836,22 +757,6 @@ class EnergyChange(QMainWindow):
 
         self.ui.restoreButton.setDisabled(True)
 
-    # Function to launch standardize panel
-    @staticmethod
-    def stdz():
-        Popen(['edm', '-x', '/home/physics/skalsi/edmDev/stdz.edl'])
-
-    # Function to launch SCORE gui
-    @staticmethod
-    def score():
-        Popen(['/usr/local/lcls/tools/script/HLAWrap', 'xterm', '-e',
-               '/usr/local/lcls/physics/score/score.bash'])
-
-    # Function to launch model GUI
-    @staticmethod
-    def modelMan():
-        Popen(['modelMan'])
-
     def filterScores(self, selectedEnergy, photonColor, electronColor,
                      delta, fourWeeksBack, end, columnLst):
 
@@ -918,11 +823,6 @@ class EnergyChange(QMainWindow):
         except IndexError:
             self.ui.statusText.setText("Error reading selected SCORE")
 
-    # give a simple number back from json data
-    @staticmethod
-    def valFromJson(datatotranslate):
-        return datatotranslate[0][u'data'][-1][u'val']
-
     def paintCell(self, row, column, item, brush):
         brush.setStyle(QtCore.Qt.SolidPattern)
         item.setBackground(brush)
@@ -987,8 +887,8 @@ class EnergyChange(QMainWindow):
 
             # Have a thread subclass to handle this (defined at bottom of this
             # file); normal threading class returns NONE
-            t = ThreadWithReturnValue(target=self.scoreThread,
-                                      args=(region,))
+            t = Utils.ThreadWithReturnValue(target=self.scoreThread,
+                                            args=(region,))
             self.diagnostics["threads"].append(t)
 
         for thread in self.diagnostics["threads"]:
@@ -1032,7 +932,7 @@ class EnergyChange(QMainWindow):
 
         try:
             # return 0, region
-            errors = setDevices(region, data)
+            errors = Utils.setDevices(region, data)
             return (len(errors) if errors is not None else 1), region
         except:
             print "Error in scoreThread setting data for " + region
@@ -1126,7 +1026,7 @@ class EnergyChange(QMainWindow):
                                              self.scoreInfo["dateChosen"],
                                              self.scoreInfo["timeChosen"]
                                              + ':00')
-            setMatricesAndRestartFeedbacks(data)
+            Utils.setMatricesAndRestartFeedbacks(data)
             self.printStatusMessage('Sent LTU/UND matrices to feedbacks and '
                                     'stopped/started')
 
@@ -1356,50 +1256,6 @@ class EnergyChange(QMainWindow):
 
                 self.caputSetpoint('VFC:FEE1:GD01:PHI_DES', "GD1PressureHi")
                 self.caputSetpoint('VFC:FEE1:GD02:PHI_DES', "GD2PressureHi")
-
-    # Ripped off from Lauren Alsberg, thanks yo!
-    def get_hist(self, pv, timeStart, timeStop, *moreArgs):
-        url = self.format_url(pv, timeStart, timeStop, *moreArgs)
-        req = urlopen(url)
-        jdata = load(req)
-        return jdata
-
-    # noinspection PyUnusedLocal
-    @staticmethod
-    def format_url(pv, timeStart, timeStop, *moreArgs):
-        machine = 'lcls'
-        applianceFormat = ('http://' + machine
-                           + '-archapp.slac.stanford.edu/retrieval/data/'
-                             'getData.json?pv=' + pv + '&from=' + timeStart
-                           + '&to=' + timeStop + '&donotchunk')
-        return applianceFormat
-
-
-# Subclass to return a status from a thread (specifically the score loading
-# threads).  Stupid that threading.Thread by default doesn't return a value.
-# noinspection PyArgumentList
-class ThreadWithReturnValue(Thread):
-    def __init__(self, group=None, target=None, name=None,
-                 args=(), kwargs=None, Verbose=None):
-
-        if kwargs is None:
-            kwargs = {}
-
-        self._Thread__kwargs = None
-        self._Thread__args = None
-        self._Thread__target = None
-        self._return = None
-
-        Thread.__init__(self, group, target, name, args, kwargs, Verbose)
-
-    def run(self):
-        if self._Thread__target is not None:
-            self._return = self._Thread__target(*self._Thread__args,
-                                                **self._Thread__kwargs)
-
-    def join(self, **kwargs):
-        Thread.join(self)
-        return self._return
 
 
 def main():

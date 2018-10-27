@@ -1,6 +1,45 @@
 import time
 from os import popen
 from epics import caget, caput
+from threading import Thread
+from urllib2 import urlopen
+from json import load
+from subprocess import Popen
+
+
+class Struct:
+    def __init__(self, **kwds):
+        self.__dict__.update(kwds)
+
+
+# Subclass to return a status from a thread (specifically the score loading
+# threads).  Stupid that threading.Thread by default doesn't return a value.
+# noinspection PyArgumentList
+class ThreadWithReturnValue(Thread):
+    def __init__(self, group=None, target=None, name=None,
+                 args=(), kwargs=None, Verbose=None):
+
+        if kwargs is None:
+            kwargs = {}
+
+        self._Thread__kwargs = None
+        self._Thread__args = None
+        self._Thread__target = None
+        self._return = None
+
+        Thread.__init__(self, group, target, name, args, kwargs, Verbose)
+
+    def run(self):
+        if self._Thread__target is not None:
+            self._return = self._Thread__target(*self._Thread__args,
+                                                **self._Thread__kwargs)
+
+    def join(self, **kwargs):
+        Thread.join(self)
+        return self._return
+
+
+ENERGY_BOUNDARY = 2050
 
 greetings = ["Hi! Aren't you the cutest lil thing!",
              "Hiiii! I've missed you beautiful! <3",
@@ -185,3 +224,109 @@ def setDevices(regionToLoad, scoreData):
                + errors)
 
     return errors
+
+
+def populateSetpoints(setpointDict):
+
+    def makePV(key, getPVName, setPVName, getHistorical=True):
+        setpointDict[key] = Struct(val=None, getPV=getPVName, setPV=setPVName,
+                                   historical=getHistorical)
+
+    def makeDoublePV(key, pvName, getHistorical=True):
+        return makePV(key, pvName, pvName, getHistorical)
+
+    for PMT in ["241", "242", "361", "362"]:
+        makeDoublePV("voltagePMT" + PMT, "HVCH:FEE1:" + PMT + ":VoltageSet")
+        makeDoublePV("calibrationPMT" + PMT, "GDET:FEE1:" + PMT + ":CALI")
+        makeDoublePV("offsetPMT" + PMT, "GDET:FEE1:" + PMT + ":OFFS")
+
+    getPV = "VGBA:FEE1:240:P"
+    for GD in ["GD01", "GD02"]:
+        makePV(GD + "PressureHi", getPV, "VFC:FEE1:" + GD + ":PHI_DES")
+        makePV(GD + "PressureLo", getPV, "VFC:FEE1:" + GD + ":PLO_DES")
+
+    electronEnergyPV = "BEND:DMP1:400:BDES"
+    makePV("electronEnergyDesired", electronEnergyPV, None)
+    makePV("electronEnergyCurrent", electronEnergyPV, None, False)
+
+    photonEnergyPV = "SIOC:SYS0:ML00:AO627"
+    makePV("photonEnergyDesired", photonEnergyPV, None)
+    makePV("photonEnergyCurrent", photonEnergyPV, None, False)
+
+    makeDoublePV("xcavLaunchX", "FBCK:FB01:TR03:S1DES")
+    makeDoublePV("xcavLaunchY", "FBCK:FB01:TR03:S2DES")
+
+    makeDoublePV("BC1PeakCurrent", "FBCK:FB04:LG01:S3DES")
+    makeDoublePV("BC1LeftJaw", "COLL:LI21:235:MOTR.VAL")
+    makeDoublePV("BC1RightJaw", "COLL:LI21:236:MOTR.VAL")
+
+    makeDoublePV("BC2Mover", "BMLN:LI24:805:MOTR.VAL")
+    makeDoublePV("BC2Phase", "SIOC:SYS0:ML00:AO063")
+
+    makeDoublePV("amplitudeL1X", "ACCL:LI21:180:L1X_ADES")
+    makeDoublePV("phaseL1X", "ACCL:LI21:180:L1X_PDES")
+
+    makeDoublePV("amplitudeL2", "ACCL:LI22:1:ADES")
+    makeDoublePV("peakCurrentL2", "FBCK:FB04:LG01:S5DES")
+    makeDoublePV("phaseL2", "ACCL:LI22:1:PDES")
+
+    makeDoublePV("amplitudeL3", "ACCL:LI25:1:ADES")
+    makeDoublePV("phaseL3", "ACCL:LI25:1:PDES")
+
+    makeDoublePV("waveplateCH1", "WPLT:IN20:459:CH1_ANGLE")
+    makeDoublePV("heaterWaveplate1", "WPLT:LR20:220:LHWP_ANGLE")
+    makeDoublePV("heaterWaveplate2", "WPLT:LR20:230:LHWP_ANGLE")
+    makeDoublePV("waveplateVHC", "WPLT:IN20:467:VHC_ANGLE")
+
+    makeDoublePV("pulseStackerDelay", "PSDL:LR20:117:TDES")
+    makeDoublePV("pulseStackerWaveplate", "WPLT:LR20:117:PSWP_ANGLE")
+
+    makeDoublePV("undLaunchPosX", "FBCK:FB03:TR04:S1DES")
+    makeDoublePV("undLaunchAngX", "FBCK:FB03:TR04:S2DES")
+    makeDoublePV("undLaunchPosY", "FBCK:FB03:TR04:S3DES")
+    makeDoublePV("undLaunchAngY", "FBCK:FB03:TR04:S4DES")
+
+    makeDoublePV("vernier", "FBCK:FB04:LG01:DL2VERNIER")
+
+    pvPositionM3S = "STEP:FEE1:1811:MOTR.RBV"
+    makePV("positionDesiredM3S", pvPositionM3S, None)
+    makePV("positionCurrentM3S", pvPositionM3S, None, False)
+
+
+# Ripped off from Lauren Alsberg, thanks yo!
+def get_hist(pv, timeStart, timeStop, *moreArgs):
+    url = format_url(pv, timeStart, timeStop, *moreArgs)
+    req = urlopen(url)
+    jdata = load(req)
+    return jdata
+
+
+# noinspection PyUnusedLocal
+def format_url(pv, timeStart, timeStop, *moreArgs):
+    machine = 'lcls'
+    applianceFormat = ('http://' + machine
+                       + '-archapp.slac.stanford.edu/retrieval/data/'
+                         'getData.json?pv=' + pv + '&from=' + timeStart
+                       + '&to=' + timeStop + '&donotchunk')
+    return applianceFormat
+
+
+# give a simple number back from json data
+def valFromJson(datatotranslate):
+    return datatotranslate[0][u'data'][-1][u'val']
+
+
+# Function to launch standardize panel
+def stdz():
+    Popen(['edm', '-x', '/home/physics/skalsi/edmDev/stdz.edl'])
+
+
+# Function to launch SCORE gui
+def score():
+    Popen(['/usr/local/lcls/tools/script/HLAWrap', 'xterm', '-e',
+           '/usr/local/lcls/physics/score/score.bash'])
+
+
+# Function to launch model GUI
+def modelMan():
+    Popen(['modelMan'])
