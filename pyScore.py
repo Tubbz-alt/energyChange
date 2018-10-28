@@ -4,6 +4,7 @@ import os
 import datetime
 import cx_Oracle
 import re
+from energyChangeUtils import Struct
 
 
 class PyScore(object):
@@ -185,6 +186,7 @@ class PyScore(object):
     # a config for a specific energy or where the user simply wants the first
     # sample number of configs
     # @param {float} Emin, Emax, est_energy, Edelta, energy
+    # returns a list of score structs with fields title, time, and comment
     def Etime_array(self, samples=None, energy=None, Emin=None, Emax=None,
                     est_energy=None, Edelta=None):
         # Parse the input arguments
@@ -194,11 +196,11 @@ class PyScore(object):
             samples = 50
 
         columns = [col[0] for col in self.cur.description]
-        title_column_num = columns.index("CONFIG_TITLE")
-        results = {}
+        titleIdx = columns.index("CONFIG_TITLE")
+        results = []
 
-        for column in columns:
-            results[column] = []
+        # for column in columns:
+        #     results[column] = []
 
         if not Emin and not Emax and est_energy:
             if Edelta:
@@ -219,10 +221,10 @@ class PyScore(object):
         num_rows = 0
 
         for row in self.cur:
-            if not row[title_column_num]:
+            if not row[titleIdx]:
                 continue
 
-            match = parse_pattern.match(row[title_column_num])
+            match = parse_pattern.match(row[titleIdx])
 
             if not match:
                 continue
@@ -238,8 +240,7 @@ class PyScore(object):
                             <= Emax)):
                     continue
 
-            for (col_num, col_name) in enumerate(columns):
-                results[col_name].append(row[col_num])
+            results.append(Struct(time=row[0], title=row[1], comment=row[2]))
 
             num_rows += 1
 

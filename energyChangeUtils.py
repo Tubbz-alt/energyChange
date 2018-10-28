@@ -1,10 +1,14 @@
 import time
+
+from PyQt4.QtCore import QDate, QTime, Qt
+from PyQt4.QtGui import QTableWidgetItem
 from os import popen
 from epics import caget, caput
 from threading import Thread
 from urllib2 import urlopen
 from json import load
 from subprocess import Popen
+from datetime import datetime
 
 
 class Struct:
@@ -247,11 +251,11 @@ def populateSetpoints(setpointDict):
 
     electronEnergyPV = "BEND:DMP1:400:BDES"
     makePV("electronEnergyDesired", electronEnergyPV, None)
-    makePV("electronEnergyCurrent", electronEnergyPV, None, False)
+    makePV("electronEnergyCurrent", electronEnergyPV, None, getHistorical=False)
 
     photonEnergyPV = "SIOC:SYS0:ML00:AO627"
     makePV("photonEnergyDesired", photonEnergyPV, None)
-    makePV("photonEnergyCurrent", photonEnergyPV, None, False)
+    makePV("photonEnergyCurrent", photonEnergyPV, None, getHistorical=False)
 
     makeDoublePV("xcavLaunchX", "FBCK:FB01:TR03:S1DES")
     makeDoublePV("xcavLaunchY", "FBCK:FB01:TR03:S2DES")
@@ -290,7 +294,78 @@ def populateSetpoints(setpointDict):
 
     pvPositionM3S = "STEP:FEE1:1811:MOTR.RBV"
     makePV("positionDesiredM3S", pvPositionM3S, None)
-    makePV("positionCurrentM3S", pvPositionM3S, None, False)
+    makePV("positionCurrentM3S", pvPositionM3S, None, getHistorical=False)
+
+
+def populateKeyLists(keyDict):
+    keyDict["6x6"] = ["BC1PeakCurrent", "amplitudeL2", "phaseL2",
+                      "peakCurrentL2", "amplitudeL3"]
+
+    keyDict["pressure"] = ["GD01PressureHi", "GD02PressureHi", "GD01PressureLo",
+                           "GD02PressureLo"]
+
+    keyDict["BC2"] = ["BC2Mover", "BC2Phase"]
+
+    keyDict["setpoints"] = ["xcavLaunchX", "xcavLaunchY", "heaterWaveplate1",
+                            "heaterWaveplate2", "waveplateVHC", "waveplateCH1",
+                            "undLaunchPosX", "undLaunchAngX", "undLaunchPosY",
+                            "undLaunchAngY", "vernier", "phaseL3"]
+
+    keyDict["pulseStacker"] = ["pulseStackerDelay", "pulseStackerWaveplate"]
+
+    keyDict["L1X"] = ["amplitudeL1X", "phaseL1X"]
+
+    keyDict["BC1"] = ["BC1LeftJaw", "BC1RightJaw"]
+
+    keysPMT = []
+    for PMT in ["241", "242", "361", "362"]:
+        keysPMT.append("voltagePMT" + PMT)
+        keysPMT.append("calibrationPMT" + PMT)
+        keysPMT.append("offsetPMT" + PMT)
+
+    keyDict["PMT"] = keysPMT
+
+
+def setupCalendar(calendarWidget, timeEdit):
+    timeGuiLaunched = datetime.now()
+    timeGuiLaunchedStr = str(timeGuiLaunched)
+
+    year = timeGuiLaunchedStr[0:4]
+    month = timeGuiLaunchedStr[5:7]
+    day = timeGuiLaunchedStr[8:10]
+
+    dateLaunched = QDate(int(year), int(month), int(day))
+
+    # Set current date for GUI calendar
+    calendarWidget.setSelectedDate(dateLaunched)
+    timeGuiLaunched = timeGuiLaunchedStr[11:16]
+
+    # Set current time for GUI time field
+    timeEdit.setTime(QTime(int(timeGuiLaunched[0:2]),
+                           int(timeGuiLaunched[3:5])))
+
+
+# Fancy scrolling message when user changes time/date; this is pointless
+# but I like it and it makes me happy in an unhappy world
+def showRollingMessage(statusText):
+    message = ''
+    for letter in "Press 'Get Values' to get archived values":
+        message += letter
+        statusText.setText(message)
+        statusText.repaint()
+        time.sleep(0.01)
+
+
+def paintCell(tableWidget, row, column, item, brush):
+    brush.setStyle(Qt.SolidPattern)
+    item.setBackground(brush)
+    tableWidget.setItem(row, column, item)
+
+
+def addScoreTableItem(scoretable, time, comment, title, row):
+    scoretable.setItem(row, 0, QTableWidgetItem(time))
+    scoretable.setItem(row, 1, QTableWidgetItem(comment))
+    scoretable.setItem(row, 2, QTableWidgetItem(title))
 
 
 # Ripped off from Lauren Alsberg, thanks yo!

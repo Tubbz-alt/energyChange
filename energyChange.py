@@ -8,10 +8,13 @@
 # feedback matrices and other things I haven't documented yet.
 
 from sys import exit, argv
-from PyQt4.QtCore import QTime, QDate
-from PyQt4.QtGui import QApplication, QMainWindow
+from PyQt4.QtCore import QTime, QDate, Qt
+
+from PyQt4.QtGui import (QApplication, QMainWindow, QAbstractItemView,
+                         QTableWidgetItem, QPalette, QBrush, QColor,
+                         QMessageBox)
+
 from epics import caget, caput
-from PyQt4 import QtCore, QtGui
 from time import sleep
 from datetime import datetime, timedelta
 from dateutil import parser
@@ -35,13 +38,12 @@ class EnergyChange(QMainWindow):
         self.cssFile = "style.css"
         self.ui = Ui_EnergyChange()
         self.ui.setupUi(self)
-        self.ui.scoretable.setSelectionMode(QtGui.QAbstractItemView
-                                            .SingleSelection)
+        self.ui.scoretable.setSelectionMode(QAbstractItemView.SingleSelection)
         self.setWindowTitle('Energy Change!')
 
         # Blank out 24-7 with 3 lines on klystron complement table (it doesn't
         # exist!)
-        item = QtGui.QTableWidgetItem()
+        item = QTableWidgetItem()
         item.setText('---')
         self.ui.tableWidget.setItem(6, 3, item)
 
@@ -51,7 +53,7 @@ class EnergyChange(QMainWindow):
         # want disabled initially as nothing has been loaded yet
         self.ui.restoreButton.setDisabled(True)
 
-        self.setupCalendar()
+        Utils.setupCalendar(self.ui.calendarWidget, self.ui.timeEdit)
 
         # Instatiate python score class
         self.scoreObject = PyScore()
@@ -64,8 +66,14 @@ class EnergyChange(QMainWindow):
         self.setpoints = {}
         Utils.populateSetpoints(self.setpoints)
 
-        self.scoreInfo = {"comments": None, "titles": None, "times": None,
-                          "dateChosen": None, "timeChosen": None}
+        self.keyLists = {}
+        Utils.populateKeyLists(self.keyLists)
+
+        self.scoreInfo = {"scoreStructs": [], "dateChosen": None,
+                          "timeChosen": None}
+
+        # self.scoreInfo = {"comments": None, "titles": None, "times": None,
+        #                   "dateChosen": None, "timeChosen": None}
 
         self.klystronComplement = {"desired": {}, "original": {}}
 
@@ -94,24 +102,6 @@ class EnergyChange(QMainWindow):
         self.makeConnections()
         self.ui.startButton.setEnabled(False)
 
-    def setupCalendar(self):
-        timeGuiLaunched = datetime.now()
-        timeGuiLaunchedStr = str(timeGuiLaunched)
-
-        year = timeGuiLaunchedStr[0:4]
-        month = timeGuiLaunchedStr[5:7]
-        day = timeGuiLaunchedStr[8:10]
-
-        dateLaunched = QDate(int(year), int(month), int(day))
-
-        # Set current date for GUI calendar
-        self.ui.calendarWidget.setSelectedDate(dateLaunched)
-        timeGuiLaunched = timeGuiLaunchedStr[11:16]
-
-        # Set current time for GUI time field
-        self.ui.timeEdit.setTime(QTime(int(timeGuiLaunched[0:2]),
-                                       int(timeGuiLaunched[3:5])))
-
     # Make gui SO PRETTY!
     def loadStyleSheet(self):
         try:
@@ -121,14 +111,17 @@ class EnergyChange(QMainWindow):
         # If my file disappears for some reason, load crappy black color scheme
         except IOError:
             self.printStatusMessage('No style sheet found!')
-            palette = QtGui.QPalette()
-            brush = QtGui.QBrush(QtGui.QColor(0, 0, 0))
-            brush.setStyle(QtCore.Qt.SolidPattern)
-            palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.Text, brush)
-            brush = QtGui.QBrush(QtGui.QColor(0, 0, 0))
-            brush.setStyle(QtCore.Qt.SolidPattern)
-            palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.Text,
+            palette = QPalette()
+
+            brush = QBrush(QColor(0, 0, 0))
+            brush.setStyle(Qt.SolidPattern)
+            palette.setBrush(QPalette.Active, QPalette.Text, brush)
+
+            brush = QBrush(QColor(0, 0, 0))
+            brush.setStyle(Qt.SolidPattern)
+            palette.setBrush(QPalette.Inactive, QPalette.Text,
                              brush)
+
             self.ui.textBrowser.setPalette(palette)
 
     # Get recent score configs and display on gui score table
@@ -185,18 +178,9 @@ class EnergyChange(QMainWindow):
                                                     sample_snaps=600,
                                                     columns=columnLst)
 
-        self.scoreInfo["times"] = scoreData['MOD_DTE']
-        self.scoreInfo["titles"] = scoreData['CONFIG_TITLE']
-        self.scoreInfo["comments"] = scoreData['DESCR']
+        self.scoreInfo["scoreStructs"] = scoreData
 
         self.populateScoreTable()
-
-        # Make sure configs returned from SCORE don't get bungled; ensure number
-        # of timestamps/comments/titles is consistent
-        if (len(self.scoreInfo["times"]) != len(self.scoreInfo["comments"])
-                or len(self.scoreInfo["times"]) != len(
-                    self.scoreInfo["titles"])):
-            self.scoreTableProblem()
 
     # Take date/time from GUI and put it into format suitable for passing to
     # archiver
@@ -273,16 +257,16 @@ class EnergyChange(QMainWindow):
         # Same if user changes time
         self.ui.timeEdit.timeChanged.connect(self.userChange)
 
-        # Set klytron table non-editable
+        # Set klystron table non-editable
         self.ui.tableWidget.setEditTriggers(
-            QtGui.QAbstractItemView.NoEditTriggers)
+            QAbstractItemView.NoEditTriggers)
 
         # Set klystron table so that user can't highlight items
         self.ui.tableWidget.setSelectionMode(
-            QtGui.QAbstractItemView.NoSelection)
+            QAbstractItemView.NoSelection)
 
         self.ui.scoretable.setEditTriggers(
-            QtGui.QAbstractItemView.NoEditTriggers)
+            QAbstractItemView.NoEditTriggers)
 
         # If user clicks score table, update GUI with correct date/time
         self.ui.scoretable.itemSelectionChanged.connect(self.setScoreTime)
@@ -292,16 +276,6 @@ class EnergyChange(QMainWindow):
 
         self.ui.PhotonEnergyEdit.returnPressed.connect(self.getScores)
         self.ui.ElectronEnergyEdit.returnPressed.connect(self.getScores)
-
-    # Fancy scrolling message when user changes time/date; this is pointless
-    # but I like it and it makes me happy in an unhappy world
-    def showRollingMessage(self):
-        message = ''
-        for letter in "Press 'Get Values' to get archived values":
-            message += letter
-            self.ui.statusText.setText(message)
-            self.ui.statusText.repaint()
-            sleep(0.01)
 
     # Function that is called when user presses main button (button could say
     # 'get values' or 'start the change' depending on what state GUI is in)
@@ -318,9 +292,8 @@ class EnergyChange(QMainWindow):
             # Sanity check to make sure that a change isn't started accidentally
             txt = "<P><FONT COLOR='#FFF'>Are you sure?</FONT></P>"
 
-            reallyWantToChange = QtGui.QMessageBox.question(self,
-                                                            "Sanity Check", txt,
-                                                            "No", "Yes")
+            reallyWantToChange = QMessageBox.question(self, "Sanity Check", txt,
+                                                      "No", "Yes")
             if reallyWantToChange:
                 self.changeEnergy()
 
@@ -389,7 +362,7 @@ class EnergyChange(QMainWindow):
         self.diagnostics["progress"] += increment
         self.ui.progbar.setValue(self.diagnostics["progress"])
 
-    def getAndLogVal(self, key, pvStruct, getHistorical, updateSetpoint=True):
+    def getAndLogVal(self, key, pvStruct, getHistorical):
         if getHistorical:
             val = Utils.get_hist(pvStruct.getPV, self.timestamp["archiveStart"],
                                  self.timestamp["archiveStop"], 'json')
@@ -397,9 +370,8 @@ class EnergyChange(QMainWindow):
         else:
             val = caget(pvStruct.getPV)
 
-        if updateSetpoint:
-            self.setpoints[key].val = val
-            self.printStatusMessage(key + ": " + str(val))
+        self.setpoints[key].val = val
+        self.printStatusMessage(key + ": " + str(val))
 
         return val
 
@@ -412,8 +384,9 @@ class EnergyChange(QMainWindow):
         # This PV returns a flattened truth table that starts at 20-1 and ends
         # at 31-2 (inclusive)
         complementDesired = Utils.get_hist("CUDKLYS:MCC0:ONBC1SUMY",
-                                          self.timestamp["archiveStart"],
-                                          self.timestamp["archiveStop"], 'json')
+                                           self.timestamp["archiveStart"],
+                                           self.timestamp["archiveStop"],
+                                           'json')
 
         # Remove sectors 20 and 31
         complementDesired = Utils.valFromJson(complementDesired)[8:88]
@@ -426,15 +399,15 @@ class EnergyChange(QMainWindow):
             for row, isOnBeam in enumerate(sector):
                 stations[row + 1] = isOnBeam
 
-                item = QtGui.QTableWidgetItem()
+                item = QTableWidgetItem()
 
                 if isOnBeam:
                     # If station on, make light green
-                    brush = QtGui.QBrush(QtGui.QColor(100, 255, 100))
+                    brush = QBrush(QColor(100, 255, 100))
                 else:
-                    brush = QtGui.QBrush(QtGui.QColor(255, 0, 0))
+                    brush = QBrush(QColor(255, 0, 0))
 
-                self.paintCell(row, column, item, brush)
+                Utils.paintCell(self.ui.tableWidget, row, column, item, brush)
                 self.updateProgress(incrementalProgress)
 
             self.klystronComplement["desired"][column + 21] = stations
@@ -443,10 +416,10 @@ class EnergyChange(QMainWindow):
         self.klystronComplement["desired"][24][7] = None
         # self.klystronComplement["desired"][24][8] = None
 
-        item = QtGui.QTableWidgetItem()
+        item = QTableWidgetItem()
         # I can't figure out how to get the grey color and I don't care enough
-        brush = QtGui.QBrush(QtGui.QColor.black)
-        self.paintCell(6, 3, item, brush)
+        brush = QBrush(QColor.black)
+        Utils.paintCell(self.ui.tableWidget, 6, 3, item, brush)
 
         # Copy list to have an 'original' list to revert to if user changes
         # complement and then wants to go back to original
@@ -501,9 +474,8 @@ class EnergyChange(QMainWindow):
             txt = ("<P><FONT COLOR='#FFF'>Select desired soft x-ray hutch"
                    "</FONT></P>")
             # noinspection PyCallByClass
-            sxrPositionDesired = QtGui.QMessageBox.question(self,
-                                                            "Hutch Selector",
-                                                            txt, "AMO", "SXR")
+            sxrPositionDesired = QMessageBox.question(self, "Hutch Selector",
+                                                      txt, "AMO", "SXR")
 
             # The setpoints are 4501um for AMO and -4503um for SXR
             if sxrPositionDesired:
@@ -517,8 +489,8 @@ class EnergyChange(QMainWindow):
         else:
             self.mirrorStatus["amoPositionNeeded"] = positionDesiredM3S > 0
 
-
-        self.mirrorStatus["sxrPositionNeeded"] = not self.mirrorStatus["amoPositionNeeded"]
+        self.mirrorStatus["sxrPositionNeeded"] = \
+            not self.mirrorStatus["amoPositionNeeded"]
 
         goingFromSXRToAMO = positionDesiredM3S > 0 > positionNowM3S
         goingFromAMOToSXR = positionDesiredM3S < 0 < positionNowM3S
@@ -583,8 +555,8 @@ class EnergyChange(QMainWindow):
             # TODO why is this relevant information?
             # sometimes archive appliance returns ridiculous # of digits-
             # i.e. 3.440000000000000013 instead of 3.44
-            energyDiff = (self.setpoints["electronEnergyCurrent"]
-                          - self.setpoints["electronEnergyDesired"])
+            energyDiff = (self.setpoints["electronEnergyCurrent"].val
+                          - self.setpoints["electronEnergyDesired"].val)
 
             if energyDiff > 0.005:
                 if self.diagnostics["scoreProblem"]:
@@ -698,7 +670,7 @@ class EnergyChange(QMainWindow):
 
         # Disable restore complement button
         self.ui.restoreButton.setDisabled(True)
-        self.showRollingMessage()
+        Utils.showRollingMessage(self.ui.statusText)
         self.ui.statusText.setText("Press 'Get Values' to get archived values")
 
     # Handles user click of complement table in order to juggle stations
@@ -708,18 +680,18 @@ class EnergyChange(QMainWindow):
 
         try:
             klysStatus = self.klystronComplement["desired"][sector][station]
-            item = QtGui.QTableWidgetItem()
+            item = QTableWidgetItem()
 
-            brush = QtGui.QBrush(QtGui.QColor.black)
+            brush = QBrush(QColor.black)
 
             if klysStatus == 1:
                 self.klystronComplement["desired"][sector][station] = 0
-                brush = QtGui.QBrush(QtGui.QColor(255, 0, 0))
+                brush = QBrush(QColor(255, 0, 0))
             elif klysStatus == 0:
                 self.klystronComplement["desired"][sector][station] = 1
-                brush = QtGui.QBrush(QtGui.QColor(100, 255, 100))
+                brush = QBrush(QColor(100, 255, 100))
 
-            self.paintCell(row, column, item, brush)
+            Utils.paintCell(self.ui.tableWidget, row, column, item, brush)
 
             self.ui.restoreButton.setDisabled(False)
 
@@ -744,16 +716,17 @@ class EnergyChange(QMainWindow):
         for sector in xrange(21, 31):
             for station in xrange(1, 9):
                 klysStatus = self.klystronComplement["desired"][sector][station]
-                item = QtGui.QTableWidgetItem()
+                item = QTableWidgetItem()
 
-                brush = QtGui.QBrush(QtGui.QColor.black)
+                brush = QBrush(QColor.black)
 
                 if klysStatus == 0:
-                    brush = QtGui.QBrush(QtGui.QColor(255, 0, 0))
+                    brush = QBrush(QColor(255, 0, 0))
                 elif klysStatus == 1:
-                    brush = QtGui.QBrush(QtGui.QColor(100, 255, 100))
+                    brush = QBrush(QColor(100, 255, 100))
 
-                self.paintCell(station - 1, sector - 21, item, brush)
+                Utils.paintCell(self.ui.tableWidget, station - 1, sector - 21,
+                                item, brush)
 
         self.ui.restoreButton.setDisabled(True)
 
@@ -771,22 +744,14 @@ class EnergyChange(QMainWindow):
         self.ui.ElectronEnergyLabel.setStyleSheet(electronColor)
         return scoreData
 
-    def addScoreTableItem(self, txt, row, column):
-        item = QtGui.QTableWidgetItem()
-        item.setText(txt)
-        self.ui.scoretable.setItem(row, column, item)
-
     def populateScoreTable(self):
 
-        for idx, time in enumerate(self.scoreInfo["times"]):
+        for idx, scoreStruct in enumerate(self.scoreInfo["scoreStructs"]):
             try:
-                self.addScoreTableItem(str(time), idx, 0)
-                self.addScoreTableItem(self.scoreInfo["comments"][idx], idx, 1)
-                self.addScoreTableItem(self.scoreInfo["titles"][idx], idx, 2)
-
-            # A safety if there is some mismatch among titles/comments/times
-            # returned from score API and processed by this GUI (e.g. not the
-            # same total number of each)
+                Utils.addScoreTableItem(self.ui.scoretable,
+                                        str(scoreStruct.time),
+                                        scoreStruct.comment,
+                                        scoreStruct.title, idx)
             except:
                 self.scoreTableProblem()
 
@@ -794,8 +759,8 @@ class EnergyChange(QMainWindow):
     def scoreTableProblem(self):
         self.ui.scoretable.clearContents()
 
-        self.addScoreTableItem('Problem reading scores.', 0, 0)
-        self.addScoreTableItem('Set date/time manually!', 0, 1)
+        Utils.addScoreTableItem(self.ui.scoretable, 'Problem reading scores.',
+                                'Set date/time manually!', "", 0)
 
     # Pull time from score config that was clicked and set gui date/time
     def setScoreTime(self):
@@ -804,7 +769,8 @@ class EnergyChange(QMainWindow):
 
         try:
             row = self.ui.scoretable.selectedIndexes()[0].row()
-            time = self.scoreInfo["times"][row]
+            scoreStruct = self.scoreInfo["scoreStructs"][row]
+            time = scoreStruct.time
             # Split string into date and time
             time = str(time).split()
             date = time[0].split('-')
@@ -822,11 +788,6 @@ class EnergyChange(QMainWindow):
         # User clicked a blank cell, stop here
         except IndexError:
             self.ui.statusText.setText("Error reading selected SCORE")
-
-    def paintCell(self, row, column, item, brush):
-        brush.setStyle(QtCore.Qt.SolidPattern)
-        item.setBackground(brush)
-        self.ui.tableWidget.setItem(row, column, item)
 
     # Disable BC2 longitudinal, DL2 energy, transverse feedbacks downstream of
     # XCAV
@@ -1006,11 +967,7 @@ class EnergyChange(QMainWindow):
 
         caput('FBCK:FB04:LG01:STATE', '0')
 
-        self.caputSetpoint('FBCK:FB04:LG01:S3DES', "BC1PeakCurrent")
-        self.caputSetpoint('ACCL:LI22:1:ADES', "amplitudeL2")
-        self.caputSetpoint('ACCL:LI22:1:PDES', "phaseL2")
-        self.caputSetpoint('FBCK:FB04:LG01:S5DES', "peakCurrentL2")
-        self.caputSetpoint('ACCL:LI25:1:ADES', "amplitudeL3")
+        self.caputKeyList("6X6")
 
         sleep(.2)
 
@@ -1041,20 +998,15 @@ class EnergyChange(QMainWindow):
             self.setSetpoints()
 
         if self.ui.pstack_cb.isChecked():
-            self.caputSetpoint('PSDL:LR20:117:TDES', "pulseStackerDelay")
-            self.caputSetpoint('WPLT:LR20:117:PSWP_ANGLE',
-                               "pulseStackerWaveplate")
-
+            self.caputKeyList("pulseStacker")
             self.printStatusMessage('Set pulse stacker delay and waveplate')
 
         if self.ui.l1x_cb.isChecked():
-            self.caputSetpoint('ACCL:LI21:180:L1X_ADES', "amplitudeL1X")
-            self.caputSetpoint('ACCL:LI21:180:L1X_PDES', "phaseL1X")
+            self.caputKeyList("L1X")
             self.printStatusMessage('Set L1X phase and amplitude')
 
         if self.ui.bc1coll_cb.isChecked():
-            self.caputSetpoint('COLL:LI21:235:MOTR.VAL', "BC1LeftJaw")
-            self.caputSetpoint('COLL:LI21:236:MOTR.VAL', "BC1RightJaw")
+            self.caputKeyList("BC1")
             self.printStatusMessage('Set BC1 collimators')
 
     # Set mirrors to desired positions
@@ -1126,16 +1078,15 @@ class EnergyChange(QMainWindow):
         BC2MoverNow = caget('BMLN:LI24:805:MOTR.VAL')
         BC2PhaseNow = caget('SIOC:SYS0:ML00:AO063')
 
-        if (BC2MoverNow == self.setpoints["BC2Mover"]
-                and BC2PhaseNow == self.setpoints["BC2Phase"]):
+        if (BC2MoverNow == self.setpoints["BC2Mover"].val
+                and BC2PhaseNow == self.setpoints["BC2Phase"].val):
             self.printStatusMessage('BC2 Mover/Phase look the same, '
                                     'not sending values')
             return
 
         self.printStatusMessage('Setting BC2 Mover and Phase')
 
-        self.caputSetpoint('BMLN:LI24:805:MOTR.VAL', "BC2Mover")
-        self.caputSetpoint('SIOC:SYS0:ML00:AO063', "BC2Phase")
+        self.caputKeyList("BC2")
 
         self.printStatusMessage('Set BC2 Mover and Phase')
 
@@ -1144,26 +1095,7 @@ class EnergyChange(QMainWindow):
         self.printStatusMessage('Setting Xcav, LHWP, Und Launch, L3P and '
                                 'vernier')
 
-        self.caputSetpoint('FBCK:FB01:TR03:S1DES', "xcavLaunchX")
-        self.caputSetpoint('FBCK:FB01:TR03:S2DES', "xcavLaunchY")
-
-        try:
-            self.caputSetpoint('WPLT:LR20:220:LHWP_ANGLE', "heaterWaveplate1")
-            self.caputSetpoint('WPLT:LR20:230:LHWP_ANGLE', "heaterWaveplate2")
-
-        except:
-            self.printStatusMessage('Unable to set heater power waveplates')
-
-        self.caputSetpoint('WPLT:IN20:467:VHC_ANGLE', "waveplateVHC")
-        self.caputSetpoint('WPLT:IN20:459:CH1_ANGLE', "waveplateCH1")
-
-        self.caputSetpoint('FBCK:FB03:TR04:S1DES', "undLaunchPosX")
-        self.caputSetpoint('FBCK:FB03:TR04:S2DES', "undLaunchAngX")
-        self.caputSetpoint('FBCK:FB03:TR04:S3DES', "undLaunchPosY")
-        self.caputSetpoint('FBCK:FB03:TR04:S4DES', "undLaunchAngY")
-
-        self.caputSetpoint('FBCK:FB04:LG01:DL2VERNIER', "vernier")
-        self.caputSetpoint('ACCL:LI25:1:PDES', "phaseL3")
+        self.caputKeyList("setpoints")
 
         self.printStatusMessage('Set Xcav, LHWP, Und Launch, L3 Phase and '
                                 'Vernier')
@@ -1173,90 +1105,59 @@ class EnergyChange(QMainWindow):
     # ZIIIIIMMMMMMMMMMMMMMMMMMMMMMMEEEEEEEEERRRRRRRRRRRRRRRRRRRRRRRR
     ############################################################################
 
-    def caputSetpoint(self, pv, key):
+    def caputSetpoint(self, key):
         self.printStatusMessage("Setting " + key + " to: "
-                                + str(self.setpoints[key]))
-        caput(pv, self.setpoints[key])
+                                + str(self.setpoints[key].val))
+        caput(self.setpoints[key].setPV, self.setpoints[key].val)
 
     # Set gas detector recipe/pressure and pmt voltages
     def setGdet(self):
+
+        def changeRecipe(pressureDes, pressureSleep, recipeVal):
+            caput('VFC:FEE1:GD01:' + pressureDes, 0.0)
+            caput('VFC:FEE1:GD02:' + pressureDes, 0.0)
+            sleep(pressureSleep)
+
+            caput('VFC:FEE1:GD01:RECIPE_DES', recipeVal)
+            caput('VFC:FEE1:GD02:RECIPE_DES', recipeVal)
+            sleep(1.5)
+
         QApplication.processEvents()
         if self.ui.pmt_cb.isChecked():
             self.printStatusMessage('Setting PMT voltages/Calibration/Offset')
             QApplication.processEvents()
 
-            for PMT in ["241", "242", "361", "362"]:
-                self.caputSetpoint('HVCH:FEE1:' + PMT + ':VoltageSet',
-                                   "voltagePMT" + PMT)
-
-                self.caputSetpoint('GDET:FEE1:' + PMT + ':CALI',
-                                   "calibrationPMT" + PMT)
-
-                self.caputSetpoint('GDET:FEE1:' + PMT + ':OFFS',
-                                   "offsetPMT" + PMT)
+            self.caputKeyList("PMT")
 
             self.printStatusMessage('Set PMT voltages/Calibration/Offset')
 
-        self.setPressuresForHardMirrorChange()
-        self.setPressuresForSoftMirrorChange()
+        if self.ui.recipe_cb.isChecked():
+            if (self.mirrorStatus["needToChangeM1"]
+                    and self.mirrorStatus["softPositionNeeded"]):
 
-        # No recipe change needed, not switching between hard/soft xrays
-        if not self.mirrorStatus["needToChangeM1"]:
-            if self.ui.pressure_cb.isChecked():
-                self.printStatusMessage('Setting pressures')
-                QApplication.processEvents()
-
-                self.caputSetpoint('VFC:FEE1:GD01:PLO_DES', "GD1PressureLo")
-                self.caputSetpoint('VFC:FEE1:GD02:PLO_DES', "GD2PressureLo")
-                self.caputSetpoint('VFC:FEE1:GD01:PHI_DES', "GD1PressureHi")
-                self.caputSetpoint('VFC:FEE1:GD02:PHI_DES', "GD2PressureHi")
-
-    def setPressuresForSoftMirrorChange(self):
-        # Mirror change to soft setting
-        if (self.mirrorStatus["needToChangeM1"]
-                and self.mirrorStatus["softPositionNeeded"]):
-
-            if self.ui.recipe_cb.isChecked():
                 self.printStatusMessage('Changing recipe from high to low')
                 QApplication.processEvents()
 
-                caput('VFC:FEE1:GD01:PHI_DES', '0')
-                caput('VFC:FEE1:GD02:PHI_DES', '0')
-                sleep(14)
-                caput('VFC:FEE1:GD01:RECIPE_DES', '4')
-                caput('VFC:FEE1:GD02:RECIPE_DES', '4')
-                sleep(1.5)
+                changeRecipe("PHI_DES", 14, 4)
 
-            if self.ui.pressure_cb.isChecked():
-                self.printStatusMessage('Setting pressures')
-                QApplication.processEvents()
-
-                self.caputSetpoint('VFC:FEE1:GD01:PLO_DES', "GD1PressureLo")
-                self.caputSetpoint('VFC:FEE1:GD02:PLO_DES', "GD2PressureLo")
-
-    def setPressuresForHardMirrorChange(self):
-        # Mirror change required, and changing to hard xray setting; or somehow
-        # are running hard xrays with low recipe (has happened and then OPS
-        # thinks there is no FEL)
-        if self.mirrorStatus["hardPositionNeeded"]:
-            if self.ui.recipe_cb.isChecked():
+            elif self.mirrorStatus["hardPositionNeeded"]:
                 self.printStatusMessage('Going to high recipe')
                 QApplication.processEvents()
 
-                caput('VFC:FEE1:GD01:RECIPE_DES', '3')
-                caput('VFC:FEE1:GD02:RECIPE_DES', '3')
-                sleep(1.5)
+                changeRecipe("PLO_DES", 0, 3)
 
-            if self.ui.pressure_cb.isChecked():
-                self.printStatusMessage('Setting pressures')
-                QApplication.processEvents()
+        if self.ui.pressure_cb.isChecked():
+            self.printStatusMessage('Setting pressures')
+            QApplication.processEvents()
 
-                caput('VFC:FEE1:GD01:PLO_DES', 0.0)
-                caput('VFC:FEE1:GD02:PLO_DES', 0.0)
+            self.caputKeyList("pressure")
 
-                self.caputSetpoint('VFC:FEE1:GD01:PHI_DES', "GD1PressureHi")
-                self.caputSetpoint('VFC:FEE1:GD02:PHI_DES', "GD2PressureHi")
-
+    def caputKeyList(self, key):
+        for key in self.keyLists[key]:
+            try:
+                self.caputSetpoint(key)
+            except:
+                self.printStatusMessage("Error setting " + key)
 
 def main():
     app = QApplication(argv)
