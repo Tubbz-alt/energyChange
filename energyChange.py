@@ -8,32 +8,26 @@
 # feedback matrices and other things I haven't documented yet.
 
 from sys import exit, argv
-from PyQt4.QtCore import QTime, QDate
-from PyQt4.QtGui import QApplication, QMainWindow
+from PyQt4.QtCore import QTime, QDate, Qt
+
+from PyQt4.QtGui import (QApplication, QMainWindow, QAbstractItemView,
+                         QTableWidgetItem, QPalette, QBrush, QColor,
+                         QMessageBox)
+
 from epics import caget, caput
-from PyQt4 import QtCore, QtGui
 from time import sleep
 from datetime import datetime, timedelta
 from dateutil import parser
 from subprocess import Popen
-
-# noinspection PyCompatibility
-from urllib2 import urlopen
-
-from json import load
-from threading import Thread
 from pytz import utc, timezone
 from message import log
 from random import randint
-from pyScore import Pyscore
+from pyScore import PyScore
 from copy import deepcopy
-from loadScore import setDevices
-from loadMatrices import setMatricesAndRestartFeedbacks
 from numpy import array
+import energyChangeUtils as Utils
 
 from energyChange_UI import Ui_EnergyChange
-
-ENERGY_BOUNDARY = 2050
 
 
 # Where the magic happens, the main class that runs this baby!
@@ -41,16 +35,15 @@ ENERGY_BOUNDARY = 2050
 class EnergyChange(QMainWindow):
     def __init__(self, parent=None):
         QMainWindow.__init__(self, parent)
-        self.cssFile = "/usr/local/lcls/tools/python/toolbox/echg/style.css"
+        self.cssFile = "style.css"
         self.ui = Ui_EnergyChange()
         self.ui.setupUi(self)
-        self.ui.scoretable.setSelectionMode(QtGui.QAbstractItemView
-                                            .SingleSelection)
+        self.ui.scoretable.setSelectionMode(QAbstractItemView.SingleSelection)
         self.setWindowTitle('Energy Change!')
 
         # Blank out 24-7 with 3 lines on klystron complement table (it doesn't
         # exist!)
-        item = QtGui.QTableWidgetItem()
+        item = QTableWidgetItem()
         item.setText('---')
         self.ui.tableWidget.setItem(6, 3, item)
 
@@ -60,87 +53,26 @@ class EnergyChange(QMainWindow):
         # want disabled initially as nothing has been loaded yet
         self.ui.restoreButton.setDisabled(True)
 
-        self.setupCalendar()
+        Utils.setupCalendar(self.ui.calendarWidget, self.ui.timeEdit)
 
-        # Instatiate Tony's python score class
-        self.scoreObject = Pyscore()
+        # Instatiate python score class
+        self.scoreObject = PyScore()
 
-        greetings = ["Hi! Aren't you the cutest lil thing!",
-                     "Hiiii! I've missed you beautiful! <3",
-                     "Came crawling back, eh? Of course you did.",
-                     "Finally decided to do your job huh?",
-                     "Hey Hey Hey! I missed you!",
-                     "I knew you'd be back. I'm so excited!",
-                     "I love you - your smile is the reason I launch!",
-                     "Hi sunshine, you light up my life!",
-                     "I love turtles. But I hate baby turtles.",
-                     "Energy change- getting you loaded since 2014",
-                     "Don't ever change. That's my job!",
-                     "For a failure, you sure seem chipper!",
-                     "It's sad that this is the highlight of your day.",
-                     "Can't wait for FACET 2...",
-                     "You're special and people like you!",
-                     "Master beats me if I'm a bad GUI :-(",
-                     "You can do anything! Reach for the stars!",
-                     "You're a capable human who does stuff!",
-                     "You excel at simple tasks! Yeah!",
-                     "If I were more than a GUI you'd make me blush!",
-                     "Delivering to CXrs or MC? Whatever who cares.",
-                     "You still work here? Sorry.",
-                     "Why did kamikazes wear helmets?",
-                     "If you do a job too well, you'll get stuck with it.",
-                     "You push buttons like nobody's business!",
-                     "You rock at turning knobs and watching numbers!",
-                     "Nobody keeps a machine on like you!",
-                     "You have a talent for making BPMs read zero!",
-                     "Way to show up for your shifts! Yeah!",
-                     "You are great at clicking things!",
-                     "Miss the SCP yet? I don't!",
-                     "Oh look at you! You're precious!",
-                     "You excel at mediocrity!",
-                     "Regret any of your life decisions yet?",
-                     "I thought you were quitting?!?",
-                     "Rick Perry is our new boss! Yay!",
-                     "Kissy face kissy face I love you!", "Didn't you quit?",
-                     "You rock at watching numbers!", "Kill me please!!!",
-                     "Don't go for your dreams, you will fail!",
-                     "You're the reason the gene pool needs a lifeguard!",
-                     "Do you still love nature, despite what it did to you?",
-                     "Ordinary people live and learn. You just live.",
-                     "Way to be physically present for 8 hours! Yeah!",
-                     "Hello, Clarice..."]
+        greetingIdx = randint(0, len(Utils.greetings) - 1)
+        self.ui.statusText.setText(Utils.greetings[greetingIdx])
 
-        self.ui.statusText.setText(greetings[randint(0, len(greetings) - 1)])
         self.loadStyleSheet()
 
-        self.setpoints = {"GD1PressureHi": None, "GD1PressureLo": None,
-                          "voltagePMT241": None, "voltagePMT242": None,
-                          "GD2PressureHi": None, "GD2PressureLo": None,
-                          "voltagePMT361": None, "voltagePMT362": None,
-                          "calibrationPMT241": None, "calibrationPMT242": None,
-                          "calibrationPMT361": None, "calibrationPMT362": None,
-                          "offsetPMT241": None, "offsetPMT242": None,
-                          "offsetPMT361": None, "offsetPMT362": None,
-                          "electronEnergyDesired": None,
-                          "electronEnergyCurrent": None,
-                          "photonEnergyDesired": None,
-                          "photonEnergyCurrent": None,
-                          "xcavLaunchX": None, "xcavLaunchY": None,
-                          "BC1PeakCurrent": None, "BC1LeftJaw": None,
-                          "BC1RightJaw": None, "BC2Mover": None,
-                          "BC2Phase": None, "amplitudeL1X": None,
-                          "phaseL1X": None, "amplitudeL2": None,
-                          "peakCurrentL2": None, "phaseL2": None,
-                          "energyL3": None, "phaseL3": None,
-                          "waveplateCH1": None, "heaterWaveplate1": None,
-                          "heaterWaveplate2": None, "waveplateVHC": None,
-                          "pulseStackerDelay": None,
-                          "pulseStackerWaveplate": None, "undLaunchPosX": None,
-                          "undLaunchPosY": None, "undLaunchAngX": None,
-                          "undLaunchAngY": None, "vernier": None}
+        self.setpoints = {}
+        Utils.populateSetpoints(self.setpoints)
 
-        self.scoreInfo = {"comments": None, "titles": None, "times": None,
-                          "dateChosen": None, "timeChosen": None}
+        self.keyLists = {}
+        Utils.populateKeyLists(self.keyLists)
+
+        self.scoreInfo = {"scoreStructs": [], "dateChosen": None,
+                          "timeChosen": None}
+
+        self.scoreData = {}
 
         self.klystronComplement = {"desired": {}, "original": {}}
 
@@ -155,9 +87,9 @@ class EnergyChange(QMainWindow):
                           "archiveStop": None, "changeStarted": None}
 
         # valsObtained is boolean representing whether user has obtained archive
-        # data for selected time. Scoreproblem is boolean representing if
-        # there was a problem loading some BDES.
-        # progress keeps track of progress number (between 0 and 100)
+        # data for selected time. Scoreproblem is a boolean representing if
+        # there was a problem loading some BDES. progress keeps track of the
+        # progress number (between 0 and 100)
         self.diagnostics = {"progress": 0, "valsObtained": False,
                             "scoreProblem": False, "threads": []}
 
@@ -169,36 +101,145 @@ class EnergyChange(QMainWindow):
         self.makeConnections()
         self.ui.startButton.setEnabled(False)
 
-    def setupCalendar(self):
-        timeGuiLaunched = datetime.now()
-        timeGuiLaunchedStr = str(timeGuiLaunched)
+    # Make gui SO PRETTY!
+    def loadStyleSheet(self):
+        try:
+            with open(self.cssFile, "r") as f:
+                self.setStyleSheet(f.read())
 
-        year = timeGuiLaunchedStr[0:4]
-        month = timeGuiLaunchedStr[5:7]
-        day = timeGuiLaunchedStr[8:10]
+        # If my file disappears for some reason, load crappy black color scheme
+        except IOError:
+            self.printStatusMessage('No style sheet found!')
+            palette = QPalette()
 
-        dateLaunched = QDate(int(year), int(month), int(day))
+            brush = QBrush(QColor(0, 0, 0))
+            brush.setStyle(Qt.SolidPattern)
+            palette.setBrush(QPalette.Active, QPalette.Text, brush)
 
-        # Set current date for GUI calendar
-        self.ui.calendarWidget.setSelectedDate(dateLaunched)
-        timeGuiLaunched = timeGuiLaunchedStr[11:16]
+            brush = QBrush(QColor(0, 0, 0))
+            brush.setStyle(Qt.SolidPattern)
+            palette.setBrush(QPalette.Inactive, QPalette.Text,
+                             brush)
 
-        # Set current time for GUI time field
-        self.ui.timeEdit.setTime(QTime(int(timeGuiLaunched[0:2]),
-                                       int(timeGuiLaunched[3:5])))
+            self.ui.textBrowser.setPalette(palette)
+
+    # Get recent score configs and display on gui score table
+    def getScores(self):
+
+        self.ui.scoretable.setDisabled(False)
+
+        # Gets selected time from GUI and puts into usable format
+        self.getTimeInfo()
+
+        # Clean slate!
+        self.ui.scoretable.clearContents()
+
+        fourWeeksBack = str(self.timestamp["requested"]
+                            - timedelta(days=28)).split('.')[0]
+
+        end = str(self.timestamp["requested"] + timedelta(minutes=1))
+        columnLst = ["mod_dte", "config_title", "descr"]
+
+        def getScoreData(energy, photonColor, electronColor, delta):
+            return self.filterScores(energy, photonColor, electronColor, delta,
+                                     fourWeeksBack, end, columnLst)
+
+        try:
+            photonEnergyText = self.ui.PhotonEnergyEdit.text()
+            electronEnergyText = self.ui.ElectronEnergyEdit.text()
+
+            if photonEnergyText:
+                photonEnergy = float(photonEnergyText)
+
+                if photonEnergy < 350:
+                    self.ui.PhotonEnergyEdit.setText('350')
+                    photonEnergy = 350
+
+                scoreData = getScoreData(photonEnergy,
+                                         "color: rgb(100,255,100)",
+                                         "color: red", 300)
+
+            elif electronEnergyText:
+                scoreData = getScoreData(float(electronEnergyText),
+                                         "color: red",
+                                         "color: rgb(100,255,100)", 0.5)
+
+            else:
+                scoreData = getScoreData(None, "color: red", "color: red", None)
+
+        except:
+            self.printStatusMessage("Unable to filter SCORE's")
+            self.ui.PhotonEnergyEdit.setText('')
+            self.ui.ElectronEnergyEdit.setText('')
+            scoreData = self.scoreObject.read_dates(beg_date=fourWeeksBack,
+                                                    end_date=end,
+                                                    sample_snaps=600,
+                                                    columns=columnLst)
+
+        self.scoreInfo["scoreStructs"] = scoreData
+
+        self.populateScoreTable()
+
+    # Take date/time from GUI and put it into format suitable for passing to
+    # archiver
+    def getTimeInfo(self):
+        # Add zeroes to keep formatting consistent (i.e. 0135 for time
+        # instead of 135)
+        def reformat(val):
+            return '0' + val if len(val) == 1 else val
+
+        chosendate = self.ui.calendarWidget.selectedDate()
+
+        chosenday = reformat(str(chosendate.day()))
+        chosenmonth = reformat(str(chosendate.month()))
+        chosenyear = str(chosendate.year())
+
+        chosentime = self.ui.timeEdit.time()
+        chosenhour = reformat(str(chosentime.hour()))
+
+        # Get selected date/time from GUI
+        chosenminute = reformat(str(chosentime.minute()))
+
+        userchoice = (chosenyear + '-' + chosenmonth + '-' + chosenday + ' '
+                      + chosenhour + ':' + chosenminute + ':00')
+
+        self.scoreInfo["dateChosen"] = userchoice[0:10]
+        self.scoreInfo["timeChosen"] = userchoice[-8:-3]
+
+        self.timestamp["requested"] = parser.parse(userchoice)
+        local = timezone("America/Los_Angeles")
+
+        # These 5 lines to convert to UTC (for archiver);
+        # also deals with DST automatically
+        local_datetime = local.localize(self.timestamp["requested"],
+                                        is_dst=True)
+
+        utc_datetime = local_datetime.astimezone(utc)
+        self.timestamp["archiveStart"] = (utc_datetime.replace(tzinfo=None)
+                                          - timedelta(minutes=1))
+
+        timeStop = self.timestamp["archiveStart"] + timedelta(minutes=1)
+        # noinspection PyCallByClass
+        self.timestamp["archiveStop"] = (str(datetime.isoformat(timeStop))
+                                         + '.000Z')
+
+        # self.timestamp["archiveStart"] and self.timestamp["archiveStop"] are
+        # the times used to grab archive data
+        self.timestamp["archiveStart"] = str(datetime.isoformat(
+            self.timestamp["archiveStart"])) + '.000Z'
 
     # Connect GUI elements to functions
     def makeConnections(self):
         self.ui.startButton.clicked.connect(self.start)
 
         # Opens STDZ GUI
-        self.ui.stdzButton.clicked.connect(self.stdz)
+        self.ui.stdzButton.clicked.connect(Utils.stdz)
 
         # Opens SCORE GUI
-        self.ui.scoreButton.clicked.connect(self.score)
+        self.ui.scoreButton.clicked.connect(Utils.score)
 
         # Opens Model Manager GUI
-        self.ui.modelButton.clicked.connect(self.modelMan)
+        self.ui.modelButton.clicked.connect(Utils.modelMan)
 
         # Restores displayed complement to archived complement
         self.ui.restoreButton.clicked.connect(self.restoreComplement)
@@ -214,16 +255,16 @@ class EnergyChange(QMainWindow):
         # Same if user changes time
         self.ui.timeEdit.timeChanged.connect(self.userChange)
 
-        # Set klytron table non-editable
+        # Set klystron table non-editable
         self.ui.tableWidget.setEditTriggers(
-            QtGui.QAbstractItemView.NoEditTriggers)
+            QAbstractItemView.NoEditTriggers)
 
         # Set klystron table so that user can't highlight items
         self.ui.tableWidget.setSelectionMode(
-            QtGui.QAbstractItemView.NoSelection)
+            QAbstractItemView.NoSelection)
 
         self.ui.scoretable.setEditTriggers(
-            QtGui.QAbstractItemView.NoEditTriggers)
+            QAbstractItemView.NoEditTriggers)
 
         # If user clicks score table, update GUI with correct date/time
         self.ui.scoretable.itemSelectionChanged.connect(self.setScoreTime)
@@ -234,37 +275,9 @@ class EnergyChange(QMainWindow):
         self.ui.PhotonEnergyEdit.returnPressed.connect(self.getScores)
         self.ui.ElectronEnergyEdit.returnPressed.connect(self.getScores)
 
-    # Make gui SO PRETTY!
-    def loadStyleSheet(self):
-        try:
-            with open(self.cssFile, "r") as f:
-                self.setStyleSheet(f.read())
-
-        # If my file disappears for some reason, load crappy black color scheme
-        except IOError:
-            self.printStatusMessage('No style sheet found!')
-            palette = QtGui.QPalette()
-            brush = QtGui.QBrush(QtGui.QColor(0, 0, 0))
-            brush.setStyle(QtCore.Qt.SolidPattern)
-            palette.setBrush(QtGui.QPalette.Active, QtGui.QPalette.Text, brush)
-            brush = QtGui.QBrush(QtGui.QColor(0, 0, 0))
-            brush.setStyle(QtCore.Qt.SolidPattern)
-            palette.setBrush(QtGui.QPalette.Inactive, QtGui.QPalette.Text,
-                             brush)
-            self.ui.textBrowser.setPalette(palette)
-
-    # Fancy scrolling message when user changes time/date; this is pointless
-    # but I like it and it makes me happy in an unhappy world
-    def showMessage(self):
-        message = ''
-        for letter in "Press 'Get Values' to get archived values":
-            message += letter
-            self.ui.statusText.setText(message)
-            self.ui.statusText.repaint()
-            sleep(0.01)
-
     # Function that is called when user presses main button (button could say
     # 'get values' or 'start the change' depending on what state GUI is in)
+    # noinspection PyCallByClass
     def start(self):
 
         # valsObtained variable is used to tell if user has gotten archived
@@ -274,44 +287,57 @@ class EnergyChange(QMainWindow):
             return self.getValues()
 
         else:
-            txt = ("<P><FONT COLOR='#FFF'>Are you sure?"
-                   "</FONT></P>")
-            # noinspection PyCallByClass
-            reallyWantToChange = QtGui.QMessageBox.question(self,
-                                                            "Sanity Check", txt,
-                                                            "No", "Yes")
+            # Sanity check to make sure that a change isn't started accidentally
+            txt = "<P><FONT COLOR='#FFF'>Are you sure?</FONT></P>"
+
+            reallyWantToChange = QMessageBox.question(self, "Sanity Check", txt,
+                                                      "No", "Yes")
+
             if reallyWantToChange:
                 self.changeEnergy()
 
             else:
                 self.printStatusMessage("Energy change aborted")
 
+    def printStatusMessage(self, message, printToStatus=True):
+        print message
+        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
+                                   + "-</i> " + message)
+        if printToStatus:
+            self.ui.statusText.setText(message)
+
+        self.ui.statusText.repaint()
+        QApplication.processEvents()
+
     def getValues(self):
 
         self.ui.restoreButton.setDisabled(True)
-        self.formatTime()
+        self.getTimeInfo()
 
         self.printStatusMessage("<b>Getting values...</b>")
-        self.updateProgress(5 - self.diagnostics["progress"])
+        self.updateProgress(0 - self.diagnostics["progress"])
 
         QApplication.processEvents()
 
         self.ui.statusText.repaint()
-        self.getEnergy()
-        self.get6x6()
-        self.getKlys()
-        self.getGdet()
 
-        # Gets random setpoints- feedback setpoints, pulse stacker,
-        # laser heater waveplate etc.
-        self.getSetpoints()
+        # 80 is the number of klystrons
+        incrementalProgress = 100.0/(len(self.setpoints) + 80
+                                     + len(self.mirrorStatus))
 
-        self.getBC2Mover()
+        for key, pvStruct in self.setpoints.iteritems():
+            self.getAndLogVal(key, pvStruct,
+                              getHistorical=pvStruct.historical)
+            self.updateProgress(incrementalProgress)
+
+        self.getKlys(incrementalProgress)
+
         self.getMirrors()
+        self.updateProgress(incrementalProgress * len(self.mirrorStatus))
         self.diagnostics["valsObtained"] = True
 
-        energyDiff = (self.setpoints["electronEnergyCurrent"]
-                      - self.setpoints["electronEnergyDesired"])
+        energyDiff = (self.setpoints["electronEnergyCurrent"].val
+                      - self.setpoints["electronEnergyDesired"].val)
 
         if energyDiff > 0.005 and self.ui.stdz_cb.isChecked():
             self.printStatusMessage("<b>I will standardize!!!</b>", False)
@@ -319,18 +345,167 @@ class EnergyChange(QMainWindow):
         self.ui.startButton.setText("Start the change!")
 
         message = ("Will switch to "
-                   + str(round(self.setpoints["photonEnergyDesired"], 1))
+                   + str(round(self.setpoints["photonEnergyDesired"].val, 1))
                    + "eV ("
-                   + str(round(self.setpoints["electronEnergyDesired"], 2))
+                   + str(round(self.setpoints["electronEnergyDesired"].val, 2))
                    + "GeV)")
 
         self.printStatusMessage(message, True)
 
-        # We have values and are ready for the energy change;
-        # set this flag to True
+        # We have values and are ready for the energy change
         self.diagnostics["valsObtained"] = True
-
         return
+
+    def updateProgress(self, increment):
+        self.diagnostics["progress"] += increment
+        self.ui.progbar.setValue(self.diagnostics["progress"])
+
+    def getAndLogVal(self, key, pvStruct, getHistorical):
+        if getHistorical:
+            val = Utils.get_hist(pvStruct.getPV, self.timestamp["archiveStart"],
+                                 self.timestamp["archiveStop"], 'json')
+            val = Utils.valFromJson(val)
+        else:
+            val = caget(pvStruct.getPV)
+
+        self.setpoints[key].val = val
+        self.printStatusMessage(key + ": " + str(val))
+
+        return val
+
+    # Get klystron complement from time of interest
+    def getKlys(self, incrementalProgress):
+
+        QApplication.processEvents()
+        self.klystronComplement["desired"] = {}
+
+        # This PV returns a flattened truth table that starts at 20-1 and ends
+        # at 31-2 (inclusive)
+        complementDesired = Utils.get_hist("CUDKLYS:MCC0:ONBC1SUMY",
+                                           self.timestamp["archiveStart"],
+                                           self.timestamp["archiveStop"],
+                                           'json')
+
+        # Remove sectors 20 and 31
+        complementDesired = Utils.valFromJson(complementDesired)[8:88]
+
+        # Reshape as a 2D array to make it easier to understand
+        complementDesired = array(complementDesired).reshape(10, 8)
+
+        for column, sector in enumerate(complementDesired):
+            stations = {}
+            for row, isOnBeam in enumerate(sector):
+                stations[row + 1] = isOnBeam
+
+                item = QTableWidgetItem()
+
+                if isOnBeam:
+                    # If station on, make light green
+                    brush = QBrush(QColor(100, 255, 100))
+                else:
+                    # Else red
+                    brush = QBrush(QColor(255, 0, 0))
+
+                Utils.paintCell(self.ui.tableWidget, row, column, item, brush)
+                self.updateProgress(incrementalProgress)
+
+            self.klystronComplement["desired"][column + 21] = stations
+
+        # "Remove" 24-7 and 24-8
+        self.klystronComplement["desired"][24][7] = None
+        # self.klystronComplement["desired"][24][8] = None
+
+        item = QTableWidgetItem()
+        # I can't figure out how to get the grey color and I don't care enough
+        brush = QBrush(QColor.black)
+        Utils.paintCell(self.ui.tableWidget, 6, 3, item, brush)
+
+        # Copy list to have an 'original' list to revert to if user changes
+        # complement and then wants to go back to original
+        self.klystronComplement["original"] = \
+            deepcopy(self.klystronComplement["desired"])
+
+    # Get mirror positions from time of interest
+    def getMirrors(self):
+
+        goingFromHardToSoft = (self.setpoints["photonEnergyCurrent"].val
+                               > Utils.ENERGY_BOUNDARY
+                               > self.setpoints["photonEnergyDesired"].val)
+
+        goingFromSoftToHard = (self.setpoints["photonEnergyDesired"].val
+                               > Utils.ENERGY_BOUNDARY
+                               > self.setpoints["photonEnergyCurrent"].val)
+
+        self.mirrorStatus["needToChangeM1"] = (goingFromHardToSoft
+                                               or goingFromSoftToHard)
+
+        wantHardXrays = (self.setpoints["photonEnergyDesired"].val
+                         > Utils.ENERGY_BOUNDARY)
+
+        self.mirrorStatus["hardPositionNeeded"] = wantHardXrays
+        self.mirrorStatus["softPositionNeeded"] = not wantHardXrays
+
+        if self.mirrorStatus["needToChangeM1"]:
+            self.printStatusMessage('Soft/Hard mirror change needed')
+            self.printStatusMessage("Will change M1 mirror to "
+                                    + ("Hard"
+                                       if self.mirrorStatus["hardPositionNeeded"]
+                                       else "Soft"))
+
+        try:
+            positionDesiredM3S = self.setpoints["positionDesiredM3S"].val
+
+        except:
+            # Channel archiver issues crop up from time to time
+            self.printStatusMessage('Could not determine M3 position at '
+                                    'requested time (Archive Appliance error). '
+                                    'Soft mirror will NOT be changed.')
+
+            self.mirrorStatus["needToChangeM3"] = False
+            self.ui.m3_cb.setChecked(False)
+            self.ui.m3_cb.setDisabled(True)
+            return
+
+        self.ui.m3_cb.setDisabled(False)
+        positionNowM3S = self.setpoints["positionCurrentM3S"].val
+
+        if self.mirrorStatus["softPositionNeeded"]:
+            txt = ("<P><FONT COLOR='#FFF'>Select desired soft x-ray hutch"
+                   "</FONT></P>")
+            # noinspection PyCallByClass
+            sxrPositionDesired = QMessageBox.question(self, "Hutch Selector",
+                                                      txt, "AMO", "SXR")
+
+            # The setpoints are 4501um for AMO and -4503um for SXR
+            if sxrPositionDesired:
+                self.mirrorStatus["amoPositionNeeded"] = False
+                positionDesiredM3S = -4503
+
+            else:
+                self.mirrorStatus["amoPositionNeeded"] = True
+                positionDesiredM3S = 4501
+
+        else:
+            self.mirrorStatus["amoPositionNeeded"] = positionDesiredM3S > 0
+
+        self.mirrorStatus["sxrPositionNeeded"] = \
+            not self.mirrorStatus["amoPositionNeeded"]
+
+        goingFromSXRToAMO = positionDesiredM3S > 0 > positionNowM3S
+        goingFromAMOToSXR = positionDesiredM3S < 0 < positionNowM3S
+
+        self.mirrorStatus["needToChangeM3"] = (goingFromSXRToAMO
+                                               or goingFromAMOToSXR)
+
+        if goingFromSXRToAMO:
+            self.printStatusMessage('M3 will be changed to provide beam to '
+                                    'AMO (unless beam will be going down '
+                                    'hard line)')
+
+        if goingFromAMOToSXR:
+            self.printStatusMessage('M3 will be changed to provide beam to '
+                                    'SXR (unless beam will be going down '
+                                    'hard line)')
 
     ########################################################################
     # Where the magic happens (user has obtained values, time to do the
@@ -379,16 +554,15 @@ class EnergyChange(QMainWindow):
             # TODO why is this relevant information?
             # sometimes archive appliance returns ridiculous # of digits-
             # i.e. 3.440000000000000013 instead of 3.44
-            energyDiff = (self.setpoints["electronEnergyCurrent"]
-                          - self.setpoints["electronEnergyDesired"])
+            energyDiff = (self.setpoints["electronEnergyCurrent"].val
+                          - self.setpoints["electronEnergyDesired"].val)
 
-            if energyDiff > 0.005 and not self.diagnostics["scoreProblem"]:
-                # Standardize magnets if going down in energy and there
-                # wasn't some problem loading scores
-                self.stdzMags()
-
-            if energyDiff > 0 and self.diagnostics["scoreProblem"]:
-                self.printStatusMessage("Skipping STDZ- problem loading scores")
+            if energyDiff > 0.005:
+                if self.diagnostics["scoreProblem"]:
+                    self.printStatusMessage("Skipping STDZ - problem loading "
+                                            "scores")
+                else:
+                    self.stdzMags()
 
     def logTime(self):
         try:
@@ -400,29 +574,23 @@ class EnergyChange(QMainWindow):
 
             # Write textBrowser text to a file so I can diagnose the basics
             # when something goes wrong
-            fh = open("/home/physics/zimmerc/python/echg_log.txt", "a")
+            with open("log.txt", "r+") as f:
+                # Reading only the first 70,000 bytes of the log file (should
+                # work out to approximately 1 week of logs. I can't imagine
+                # needing more history than that)
+                head = f.read(70000)
 
-            curtime = datetime.now()
-            # Include time GUI was run and what score config was loaded
-            fh.write("\n\n" + self.scoreInfo["dateChosen"] + " " +
-                     self.scoreInfo["timeChosen"] + "\n"
-                     + str(curtime)[0:10] + " " + str(curtime)[11:16] + "\n"
-                     + self.ui.textBrowser.toPlainText())
-
-            fh.close()
+                # Moving to the front of the file so that we can prepend the new
+                # log data
+                f.seek(0, 0)
+                f.write(self.scoreInfo["dateChosen"] + " "
+                        + self.scoreInfo["timeChosen"] + "\n"
+                        + str(curtime)[0:10] + " " + str(curtime)[11:16] + "\n"
+                        + self.ui.textBrowser.toPlainText() + "\n\n" + head)
 
         except:
-            self.printStatusMessage('problem with time logging or log writing')
-
-    def printStatusMessage(self, message, printToStatus=True):
-        print message
-        self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
-                                   + "-</i> " + message)
-        if printToStatus:
-            self.ui.statusText.setText(message)
-
-        self.ui.statusText.repaint()
-        QApplication.processEvents()
+            self.printStatusMessage('problem with time logging or log writing',
+                                    False)
 
     def implementSelectedChanges(self):
 
@@ -465,10 +633,6 @@ class EnergyChange(QMainWindow):
             self.set6x6()
             self.updateProgress(5)
 
-    def updateProgress(self, increment):
-        self.diagnostics["progress"] += increment
-        self.ui.progbar.setValue(self.diagnostics["progress"])
-
     def setupUiAndDiagnostics(self):
         # for time logging
         self.timestamp["changeStarted"] = datetime.now()
@@ -502,13 +666,13 @@ class EnergyChange(QMainWindow):
         self.ui.startButton.setText('Get Values')
 
         # Format user time so it is ready to pass to Archiver
-        self.formatTime()
+        self.getTimeInfo()
 
         self.updateProgress(-self.diagnostics["progress"])
 
         # Disable restore complement button
         self.ui.restoreButton.setDisabled(True)
-        self.showMessage()
+        Utils.showRollingMessage(self.ui.statusText)
         self.ui.statusText.setText("Press 'Get Values' to get archived values")
 
     # Handles user click of complement table in order to juggle stations
@@ -518,18 +682,18 @@ class EnergyChange(QMainWindow):
 
         try:
             klysStatus = self.klystronComplement["desired"][sector][station]
-            item = QtGui.QTableWidgetItem()
+            item = QTableWidgetItem()
 
-            brush = QtGui.QBrush(QtGui.QColor.black)
+            brush = QBrush(QColor.black)
 
             if klysStatus == 1:
                 self.klystronComplement["desired"][sector][station] = 0
-                brush = QtGui.QBrush(QtGui.QColor(255, 0, 0))
+                brush = QBrush(QColor(255, 0, 0))
             elif klysStatus == 0:
                 self.klystronComplement["desired"][sector][station] = 1
-                brush = QtGui.QBrush(QtGui.QColor(100, 255, 100))
+                brush = QBrush(QColor(100, 255, 100))
 
-            self.paintCell(row, column, item, brush)
+            Utils.paintCell(self.ui.tableWidget, row, column, item, brush)
 
             self.ui.restoreButton.setDisabled(False)
 
@@ -554,82 +718,19 @@ class EnergyChange(QMainWindow):
         for sector in xrange(21, 31):
             for station in xrange(1, 9):
                 klysStatus = self.klystronComplement["desired"][sector][station]
-                item = QtGui.QTableWidgetItem()
+                item = QTableWidgetItem()
 
-                brush = QtGui.QBrush(QtGui.QColor.black)
+                brush = QBrush(QColor.black)
 
                 if klysStatus == 0:
-                    brush = QtGui.QBrush(QtGui.QColor(255, 0, 0))
+                    brush = QBrush(QColor(255, 0, 0))
                 elif klysStatus == 1:
-                    brush = QtGui.QBrush(QtGui.QColor(100, 255, 100))
+                    brush = QBrush(QColor(100, 255, 100))
 
-                self.paintCell(station - 1, sector - 21, item, brush)
+                Utils.paintCell(self.ui.tableWidget, station - 1, sector - 21,
+                                item, brush)
 
         self.ui.restoreButton.setDisabled(True)
-
-    # Function to launch standardize panel
-    @staticmethod
-    def stdz():
-        Popen(['edm', '-x', '/home/physics/skalsi/edmDev/stdz.edl'])
-
-    # Function to launch SCORE gui
-    @staticmethod
-    def score():
-        Popen(['/usr/local/lcls/tools/script/HLAWrap', 'xterm', '-e',
-               '/usr/local/lcls/physics/score/score.bash'])
-
-    # Function to launch model GUI
-    @staticmethod
-    def modelMan():
-        Popen(['modelMan'])
-
-    # Take date/time from GUI and put it into format suitable for passing to
-    # archiver
-    def formatTime(self):
-        # Add zeroes to keep formatting consistent (i.e. 0135 for time
-        # instead of 135)
-        def reformat(val):
-            return '0' + val if len(val) == 1 else val
-
-        chosendate = self.ui.calendarWidget.selectedDate()
-
-        chosenday = reformat(str(chosendate.day()))
-        chosenmonth = reformat(str(chosendate.month()))
-        chosenyear = str(chosendate.year())
-
-        chosentime = self.ui.timeEdit.time()
-        chosenhour = reformat(str(chosentime.hour()))
-
-        # Get selected date/time from GUI
-        chosenminute = reformat(str(chosentime.minute()))
-
-        userchoice = (chosenyear + '-' + chosenmonth + '-' + chosenday + ' '
-                      + chosenhour + ':' + chosenminute + ':00')
-
-        self.scoreInfo["dateChosen"] = userchoice[0:10]
-        self.scoreInfo["timeChosen"] = userchoice[-8:-3]
-
-        self.timestamp["requested"] = parser.parse(userchoice)
-        local = timezone("America/Los_Angeles")
-
-        # These 5 lines to convert to UTC (for archiver);
-        # also deals with DST automatically
-        local_datetime = local.localize(self.timestamp["requested"],
-                                        is_dst=True)
-
-        utc_datetime = local_datetime.astimezone(utc)
-        self.timestamp["archiveStart"] = (utc_datetime.replace(tzinfo=None)
-                                          - timedelta(minutes=1))
-
-        timeStop = self.timestamp["archiveStart"] + timedelta(minutes=1)
-        # noinspection PyCallByClass
-        self.timestamp["archiveStop"] = (str(datetime.isoformat(timeStop))
-                                         + '.000Z')
-
-        # self.timestamp["archiveStart"] and self.timestamp["archiveStop"] are
-        # the times used to grab archive data
-        self.timestamp["archiveStart"] = str(datetime.isoformat(
-            self.timestamp["archiveStart"])) + '.000Z'
 
     def filterScores(self, selectedEnergy, photonColor, electronColor,
                      delta, fourWeeksBack, end, columnLst):
@@ -645,85 +746,14 @@ class EnergyChange(QMainWindow):
         self.ui.ElectronEnergyLabel.setStyleSheet(electronColor)
         return scoreData
 
-    # Get recent score configs and display on gui score table
-    def getScores(self):
-        self.ui.scoretable.setDisabled(False)
-
-        # Gets selected time from GUI and puts into usable format
-        self.formatTime()
-
-        # Clean slate!
-        self.ui.scoretable.clearContents()
-
-        fourWeeksBack = str(self.timestamp["requested"]
-                            - timedelta(days=28)).split('.')[0]
-
-        end = str(self.timestamp["requested"] + timedelta(minutes=1))
-        columnLst = ["mod_dte", "config_title", "descr"]
-
-        try:
-            photonEnergyText = self.ui.PhotonEnergyEdit.text()
-            electronEnergyText = self.ui.ElectronEnergyEdit.text()
-
-            if photonEnergyText:
-                photonEnergy = float(photonEnergyText)
-                if photonEnergy < 350:
-                    self.ui.PhotonEnergyEdit.setText('350')
-
-                scoreData = self.filterScores(photonEnergy,
-                                              "color: rgb(100,255,100)",
-                                              "color: red", 300, fourWeeksBack,
-                                              end, columnLst)
-
-            elif electronEnergyText:
-                scoreData = self.filterScores(float(electronEnergyText),
-                                              "color: red",
-                                              "color: rgb(100,255,100)", 0.5,
-                                              fourWeeksBack, end, columnLst)
-
-            else:
-                scoreData = self.filterScores(None, "color: red", "color: red",
-                                              None, fourWeeksBack, end,
-                                              columnLst)
-
-        except:
-            self.printStatusMessage("Unable to filter SCORE's")
-            self.ui.PhotonEnergyEdit.setText('')
-            self.ui.ElectronEnergyEdit.setText('')
-            scoreData = self.scoreObject.read_dates(beg_date=fourWeeksBack,
-                                                    end_date=end,
-                                                    sample_snaps=600,
-                                                    columns=columnLst)
-
-        self.scoreInfo["times"] = scoreData['MOD_DTE']
-        self.scoreInfo["titles"] = scoreData['CONFIG_TITLE']
-        self.scoreInfo["comments"] = scoreData['DESCR']
-
-        self.populateScoreTable()
-
-        # Make sure configs returned from SCORE don't get bungled; ensure number
-        # of timestamps/comments/titles is consistent
-        if (len(self.scoreInfo["times"]) != len(self.scoreInfo["comments"])
-                or len(self.scoreInfo["times"]) != len(
-                    self.scoreInfo["titles"])):
-            self.scoreTableProblem()
-
-    def addScoreTableItem(self, txt, row, column):
-        item = QtGui.QTableWidgetItem()
-        item.setText(txt)
-        self.ui.scoretable.setItem(row, column, item)
-
     def populateScoreTable(self):
 
-        for idx, time in enumerate(self.scoreInfo["times"]):
+        for idx, scoreStruct in enumerate(self.scoreInfo["scoreStructs"]):
             try:
-                self.addScoreTableItem(str(time), idx, 0)
-                self.addScoreTableItem(self.scoreInfo["comments"][idx], idx, 1)
-                self.addScoreTableItem(self.scoreInfo["titles"][idx], idx, 2)
-
-            # A safety if there is some mismatch among titles/comments/times
-            # returned from score API and processed by this GUI (e.g. not the
-            # same total number of each)
+                Utils.addScoreTableItem(self.ui.scoretable,
+                                        str(scoreStruct.time),
+                                        scoreStruct.comment,
+                                        scoreStruct.title, idx)
             except:
                 self.scoreTableProblem()
 
@@ -731,8 +761,8 @@ class EnergyChange(QMainWindow):
     def scoreTableProblem(self):
         self.ui.scoretable.clearContents()
 
-        self.addScoreTableItem('Problem reading scores.', 0, 0)
-        self.addScoreTableItem('Set date/time manually!', 0, 1)
+        Utils.addScoreTableItem(self.ui.scoretable, 'Problem reading scores.',
+                                'Set date/time manually!', "", 0)
 
     # Pull time from score config that was clicked and set gui date/time
     def setScoreTime(self):
@@ -741,7 +771,8 @@ class EnergyChange(QMainWindow):
 
         try:
             row = self.ui.scoretable.selectedIndexes()[0].row()
-            time = self.scoreInfo["times"][row]
+            scoreStruct = self.scoreInfo["scoreStructs"][row]
+            time = scoreStruct.time
             # Split string into date and time
             time = str(time).split()
             date = time[0].split('-')
@@ -759,285 +790,6 @@ class EnergyChange(QMainWindow):
         # User clicked a blank cell, stop here
         except IndexError:
             self.ui.statusText.setText("Error reading selected SCORE")
-
-    # give a simple number back from json data
-    @staticmethod
-    def valFromJson(datatotranslate):
-        return datatotranslate[0][u'data'][-1][u'val']
-
-    # Get current/desired electron and photon energies
-    def getEnergy(self):
-        self.getAndLogValue('SIOC:SYS0:ML00:AO627', "photonEnergyCurrent",
-                            getHistorical=False)
-
-        self.getAndLogValue('SIOC:SYS0:ML00:AO627', 'photonEnergyDesired')
-
-        self.getAndLogValue('BEND:DMP1:400:BDES', "electronEnergyCurrent",
-                            getHistorical=False)
-
-        self.getAndLogValue('BEND:DMP1:400:BDES', 'electronEnergyDesired')
-
-        self.updateProgress(10)
-
-    # Get important 6x6 parameters from time of interest
-    def get6x6(self):
-        QApplication.processEvents()
-
-        self.getAndLogValue('FBCK:FB04:LG01:S3DES', "BC1PeakCurrent")
-        self.getAndLogValue('ACCL:LI22:1:ADES', "amplitudeL2")
-        self.getAndLogValue('ACCL:LI22:1:PDES', "phaseL2")
-        self.getAndLogValue('FBCK:FB04:LG01:S5DES', "peakCurrentL2")
-        self.getAndLogValue('ACCL:LI25:1:ADES', "energyL3")
-
-        self.updateProgress(10)
-
-    def paintCell(self, row, column, item, brush):
-        brush.setStyle(QtCore.Qt.SolidPattern)
-        item.setBackground(brush)
-        self.ui.tableWidget.setItem(row, column, item)
-
-    # Get klystron complement from time of interest
-    def getKlys(self):
-
-        QApplication.processEvents()
-        self.klystronComplement["desired"] = {}
-
-        # This PV returns a flattened truth table that starts at 20-1 and ends
-        # at 31-2 (inclusive)
-        complementDesired = self.get_hist("CUDKLYS:MCC0:ONBC1SUMY",
-                                          self.timestamp["archiveStart"],
-                                          self.timestamp["archiveStop"], 'json')
-
-        # Remove sectors 20 and 31
-        complementDesired = self.valFromJson(complementDesired)[8:88]
-
-        # Reshape as a 2D array to make it easier to understand
-        complementDesired = array(complementDesired).reshape(10, 8)
-
-        for column, sector in enumerate(complementDesired):
-            stations = {}
-            for row, isOnBeam in enumerate(sector):
-                stations[row + 1] = isOnBeam
-
-                item = QtGui.QTableWidgetItem()
-
-                if isOnBeam:
-                    # If station on, make light green
-                    brush = QtGui.QBrush(QtGui.QColor(100, 255, 100))
-                else:
-                    brush = QtGui.QBrush(QtGui.QColor(255, 0, 0))
-
-                self.paintCell(row, column, item, brush)
-
-            self.klystronComplement["desired"][column + 21] = stations
-            self.updateProgress(5)
-
-        # "Remove" 24-7 and 24-8
-        self.klystronComplement["desired"][24][7] = None
-        # self.klystronComplement["desired"][24][8] = None
-
-        item = QtGui.QTableWidgetItem()
-        # I can't figure out how to get the grey color and I don't care enough
-        brush = QtGui.QBrush(QtGui.QColor.black)
-        self.paintCell(6, 3, item, brush)
-
-        # Copy list to have an 'original' list to revert to if user changes
-        # complement and then wants to go back to original
-        self.klystronComplement["original"] = \
-            deepcopy(self.klystronComplement["desired"])
-
-    # Get gas detector pressure PVs and pmt voltages from time of interest
-    def getGdet(self):
-        QApplication.processEvents()
-        self.updateProgress(5)
-        try:
-            self.getPressureSetpoints()
-
-            self.updateProgress(5)
-
-            for PMT in ["241", "242", "361", "362"]:
-                self.getAndLogValue('GDET:FEE1:' + PMT + ':CALI',
-                                    "calibrationPMT" + PMT)
-                self.getAndLogValue('GDET:FEE1:' + PMT + ':OFFS',
-                                    "offsetPMT" + PMT)
-
-            self.printStatusMessage("Got PMT calibration/offset values")
-
-            self.updateProgress(5)
-            self.ui.pressure_cb.setDisabled(False)
-            self.ui.recipe_cb.setDisabled(False)
-            self.ui.pmt_cb.setDisabled(False)
-
-        except:
-            # Sometimes have trouble getting gas detector stuff due to channel
-            # archiver on photon side
-            self.printStatusMessage('Problem retrieving gas detector PVs; '
-                                    'possible photon appliance issue. Will NOT '
-                                    'change pressure/recipe/voltages/'
-                                    'calibration/offset')
-
-            self.ui.pressure_cb.setChecked(False)
-            self.ui.pressure_cb.setDisabled(True)
-            self.ui.recipe_cb.setChecked(False)
-            self.ui.recipe_cb.setDisabled(True)
-            self.ui.pmt_cb.setChecked(False)
-            self.ui.pmt_cb.setDisabled(True)
-            self.updateProgress(10)
-
-    def getAndLogValue(self, pv, key, updateSetpoint=True, getHistorical=True):
-        if getHistorical:
-            val = self.get_hist(pv, self.timestamp["archiveStart"],
-                                self.timestamp["archiveStop"], 'json')
-            val = self.valFromJson(val)
-        else:
-            val = caget(pv)
-
-        if updateSetpoint:
-            self.setpoints[key] = val
-            self.printStatusMessage(key + ": " + str(val))
-
-        return val
-
-    def getPressureSetpoints(self):
-
-        self.getAndLogValue('VGBA:FEE1:240:P', "GD1PressureHi")
-        self.getAndLogValue('VGBA:FEE1:240:P', "GD1PressureLo")
-        self.getAndLogValue('VGBA:FEE1:360:P', "GD2PressureHi")
-        self.getAndLogValue('VGBA:FEE1:360:P', "GD2PressureLo")
-
-        for PMT in ["241", "242", "361", "362"]:
-            self.getAndLogValue('HVCH:FEE1:' + PMT + ':VoltageSet',
-                                "voltagePMT" + PMT)
-
-    # Random setpoints we also want to load.  Grab them from archive appliance
-    def getSetpoints(self):
-
-        self.getAndLogValue('FBCK:FB01:TR03:S1DES', "xcavLaunchX")
-        self.getAndLogValue('FBCK:FB01:TR03:S2DES', "xcavLaunchY")
-
-        try:
-            self.getAndLogValue('WPLT:LR20:220:LHWP_ANGLE',
-                                "heaterWaveplate1")
-            self.getAndLogValue('WPLT:LR20:230:LHWP_ANGLE',
-                                "heaterWaveplate2")
-
-        except:
-            message = ('Could not retrieve heater waveplate values, '
-                       'will not load')
-            self.printStatusMessage(message)
-
-        self.getAndLogValue('WPLT:IN20:467:VHC_ANGLE', "waveplateVHC")
-        self.getAndLogValue('WPLT:IN20:459:CH1_ANGLE', "waveplateCH1")
-
-        self.getAndLogValue('FBCK:FB03:TR04:S1DES', "undLaunchPosX")
-        self.getAndLogValue('FBCK:FB03:TR04:S2DES', "undLaunchAngX")
-        self.getAndLogValue('FBCK:FB03:TR04:S3DES', "undLaunchPosY")
-        self.getAndLogValue('FBCK:FB03:TR04:S4DES', "undLaunchAngY")
-
-        self.getAndLogValue('FBCK:FB04:LG01:DL2VERNIER', "vernier")
-
-        self.getAndLogValue('ACCL:LI25:1:PDES', "phaseL3")
-
-        self.getAndLogValue('ACCL:LI21:180:L1X_ADES', "amplitudeL1X")
-        self.getAndLogValue('ACCL:LI21:180:L1X_PDES', "phaseL1X")
-
-        self.getAndLogValue('PSDL:LR20:117:TDES', "pulseStackerDelay")
-        self.getAndLogValue('WPLT:LR20:117:PSWP_ANGLE',
-                            "pulseStackerWaveplate")
-
-        self.getAndLogValue('COLL:LI21:235:MOTR.VAL', "BC1LeftJaw")
-        self.getAndLogValue('COLL:LI21:236:MOTR.VAL', "BC1RightJaw")
-
-    # Get chicane mover value and phase value
-    def getBC2Mover(self):
-        self.getAndLogValue('BMLN:LI24:805:MOTR.VAL', "BC2Mover")
-        self.getAndLogValue('SIOC:SYS0:ML00:AO063', "BC2Phase")
-
-    # Get mirror positions from time of interest
-    def getMirrors(self):
-
-        goingFromHardToSoft = (self.setpoints["photonEnergyCurrent"]
-                               > ENERGY_BOUNDARY
-                               > self.setpoints["photonEnergyDesired"])
-
-        goingFromSoftToHard = (self.setpoints["photonEnergyDesired"]
-                               > ENERGY_BOUNDARY
-                               > self.setpoints["photonEnergyCurrent"])
-
-        self.mirrorStatus["needToChangeM1"] = (goingFromHardToSoft
-                                               or goingFromSoftToHard)
-
-        wantHardXrays = self.setpoints["photonEnergyDesired"] > ENERGY_BOUNDARY
-
-        self.mirrorStatus["hardPositionNeeded"] = wantHardXrays
-        self.mirrorStatus["softPositionNeeded"] = not wantHardXrays
-
-        if self.mirrorStatus["needToChangeM1"]:
-            self.printStatusMessage('Soft/Hard mirror change needed')
-
-            if self.mirrorStatus["hardPositionNeeded"]:
-                self.printStatusMessage('Will change M1 mirror to Hard')
-
-            else:
-                self.printStatusMessage('Will change M1 mirror to Soft')
-
-        try:
-            positionDesiredM3S = self.getAndLogValue(
-                'STEP:FEE1:1811:MOTR.RBV',
-                None, False)
-
-        except:
-            # Channel archiver issues crop up from time to time
-            self.printStatusMessage('Could not determine M3 position at '
-                                    'requested time (Archive Appliance error). '
-                                    'Soft mirror will NOT be changed.')
-
-            self.mirrorStatus["needToChangeM3"] = False
-            self.ui.m3_cb.setChecked(False)
-            self.ui.m3_cb.setDisabled(True)
-            self.updateProgress(10)
-            return
-
-        self.ui.m3_cb.setDisabled(False)
-        positionNowM3S = caget('STEP:FEE1:1811:MOTR.RBV')
-
-        # The setpoints are 4501um for AMO and -4503um for SXR
-        self.mirrorStatus["amoPositionNeeded"] = positionDesiredM3S > 0
-
-        if self.mirrorStatus["softPositionNeeded"]:
-            txt = ("<P><FONT COLOR='#FFF'>Select desired soft x-ray hutch"
-                   "</FONT></P>")
-            # noinspection PyCallByClass
-            desiredSoftHutch = QtGui.QMessageBox.question(self,
-                                                          "Hutch Selector", txt,
-                                                          "AMO", "SXR")
-            if desiredSoftHutch == 0:
-                self.mirrorStatus["amoPositionNeeded"] = True
-                positionDesiredM3S = 4501
-
-            else:
-                positionDesiredM3S = -4503
-
-        self.mirrorStatus["sxrPositionNeeded"] = not self.mirrorStatus[
-            "amoPositionNeeded"]
-
-        goingFromSXRToAMO = positionDesiredM3S > 0 > positionNowM3S
-        goingFromAMOToSXR = positionDesiredM3S < 0 < positionNowM3S
-
-        self.mirrorStatus["needToChangeM3"] = (goingFromSXRToAMO
-                                               or goingFromAMOToSXR)
-
-        if goingFromSXRToAMO:
-            self.printStatusMessage('M3 will be changed to provide beam to '
-                                    'AMO (unless beam will be going down '
-                                    'hard line)')
-
-        if goingFromAMOToSXR:
-            self.printStatusMessage('M3 will be changed to provide beam to '
-                                    'SXR (unless beam will be going down '
-                                    'hard line)')
-
-        self.updateProgress(10)
 
     # Disable BC2 longitudinal, DL2 energy, transverse feedbacks downstream of
     # XCAV
@@ -1079,13 +831,15 @@ class EnergyChange(QMainWindow):
         regionList = []
 
         if self.ui.injector_cb.isChecked():
-            regionList.append("Gun to TD11-LEM")
+            self.getScoreData("Gun to TD11-LEM", regionList)
 
         if self.ui.score_cb.isChecked():
-            regionList.extend(("Cu Linac-LEM", "Hard BSY thru LTUH-LEM"))
+            for region in ["Cu Linac-LEM", "Hard BSY thru LTUH-LEM"]:
+                self.getScoreData(region, regionList)
 
         if self.ui.taper_cb.isChecked():
-            regionList.extend(("Undulator Taper", "Undulator-LEM"))
+            for region in ["Undulator Taper", "Undulator-LEM"]:
+                self.getScoreData(region, regionList)
 
         # Put message in message log that scores are being loaded
         for region in regionList:
@@ -1098,12 +852,26 @@ class EnergyChange(QMainWindow):
 
             # Have a thread subclass to handle this (defined at bottom of this
             # file); normal threading class returns NONE
-            t = ThreadWithReturnValue(target=self.scoreThread,
-                                      args=(region,))
+            t = Utils.ThreadWithReturnValue(target=self.scoreThread,
+                                            args=(region,))
+
             self.diagnostics["threads"].append(t)
 
         for thread in self.diagnostics["threads"]:
             thread.start()
+
+    def getScoreData(self, region, regionList):
+        try:
+            data = self.scoreObject.read_pvs(region,
+                                             self.scoreInfo["dateChosen"],
+                                             self.scoreInfo["timeChosen"]
+                                             + ':00')
+            self.scoreData[region] = data
+
+            regionList.append(region)
+
+        except:
+            print "Error getting SCORE data for " + region
 
     def checkScoreLoads(self):
         self.printStatusMessage("Waiting for SCORE regions to load...")
@@ -1132,18 +900,9 @@ class EnergyChange(QMainWindow):
 
     # Thread function for loading each individual score region
     def scoreThread(self, region):
-        try:
-            data = self.scoreObject.read_pvs(region,
-                                             self.scoreInfo["dateChosen"],
-                                             self.scoreInfo["timeChosen"]
-                                             + ':00')
-        except:
-            print "Error in scoreThread getting data for " + region
-            return 1, region
 
         try:
-            # return 0, region
-            errors = setDevices(region, data)
+            errors = Utils.setDevices(region, self.scoreData[region])
             return (len(errors) if errors is not None else 1), region
         except:
             print "Error in scoreThread setting data for " + region
@@ -1217,11 +976,7 @@ class EnergyChange(QMainWindow):
 
         caput('FBCK:FB04:LG01:STATE', '0')
 
-        self.caputSetpoint('FBCK:FB04:LG01:S3DES', "BC1PeakCurrent")
-        self.caputSetpoint('ACCL:LI22:1:ADES', "amplitudeL2")
-        self.caputSetpoint('ACCL:LI22:1:PDES', "phaseL2")
-        self.caputSetpoint('FBCK:FB04:LG01:S5DES', "peakCurrentL2")
-        self.caputSetpoint('ACCL:LI25:1:ADES', "energyL3")
+        self.caputKeyList("6x6")
 
         sleep(.2)
 
@@ -1237,7 +992,7 @@ class EnergyChange(QMainWindow):
                                              self.scoreInfo["dateChosen"],
                                              self.scoreInfo["timeChosen"]
                                              + ':00')
-            setMatricesAndRestartFeedbacks(data)
+            Utils.setMatricesAndRestartFeedbacks(data)
             self.printStatusMessage('Sent LTU/UND matrices to feedbacks and '
                                     'stopped/started')
 
@@ -1249,23 +1004,20 @@ class EnergyChange(QMainWindow):
         # Set feedback setpoints, laser heater, L3 phase, laser heater camera
         # waveplates, vernier etc.
         if self.ui.setpoints_cb.isChecked():
-            self.setSetpoints()
+            self.caputKeyList("setpoints")
+            self.printStatusMessage('Set Xcav, LHWP, Und Launch, L3 Phase and '
+                                    'Vernier')
 
         if self.ui.pstack_cb.isChecked():
-            self.caputSetpoint('PSDL:LR20:117:TDES', "pulseStackerDelay")
-            self.caputSetpoint('WPLT:LR20:117:PSWP_ANGLE',
-                               "pulseStackerWaveplate")
-
+            self.caputKeyList("pulseStacker")
             self.printStatusMessage('Set pulse stacker delay and waveplate')
 
         if self.ui.l1x_cb.isChecked():
-            self.caputSetpoint('ACCL:LI21:180:L1X_ADES', "amplitudeL1X")
-            self.caputSetpoint('ACCL:LI21:180:L1X_PDES', "phaseL1X")
+            self.caputKeyList("L1X")
             self.printStatusMessage('Set L1X phase and amplitude')
 
         if self.ui.bc1coll_cb.isChecked():
-            self.caputSetpoint('COLL:LI21:235:MOTR.VAL', "BC1LeftJaw")
-            self.caputSetpoint('COLL:LI21:236:MOTR.VAL', "BC1RightJaw")
+            self.caputKeyList("BC1")
             self.printStatusMessage('Set BC1 collimators')
 
     # Set mirrors to desired positions
@@ -1337,181 +1089,76 @@ class EnergyChange(QMainWindow):
         BC2MoverNow = caget('BMLN:LI24:805:MOTR.VAL')
         BC2PhaseNow = caget('SIOC:SYS0:ML00:AO063')
 
-        if (BC2MoverNow == self.setpoints["BC2Mover"]
-                and BC2PhaseNow == self.setpoints["BC2Phase"]):
+        if (BC2MoverNow == self.setpoints["BC2Mover"].val
+                and BC2PhaseNow == self.setpoints["BC2Phase"].val):
             self.printStatusMessage('BC2 Mover/Phase look the same, '
                                     'not sending values')
             return
 
         self.printStatusMessage('Setting BC2 Mover and Phase')
 
-        self.caputSetpoint('BMLN:LI24:805:MOTR.VAL', "BC2Mover")
-        self.caputSetpoint('SIOC:SYS0:ML00:AO063', "BC2Phase")
+        self.caputKeyList("BC2")
 
         self.printStatusMessage('Set BC2 Mover and Phase')
-
-    # Set random setpoints (xcav, und launch, lhwp etc.)
-    def setSetpoints(self):
-        self.printStatusMessage('Setting Xcav, LHWP, Und Launch, L3P and '
-                                'vernier')
-
-        self.caputSetpoint('FBCK:FB01:TR03:S1DES', "xcavLaunchX")
-        self.caputSetpoint('FBCK:FB01:TR03:S2DES', "xcavLaunchY")
-
-        try:
-            self.caputSetpoint('WPLT:LR20:220:LHWP_ANGLE', "heaterWaveplate1")
-            self.caputSetpoint('WPLT:LR20:230:LHWP_ANGLE', "heaterWaveplate2")
-
-        except:
-            self.printStatusMessage('Unable to set heater power waveplates')
-
-        self.caputSetpoint('WPLT:IN20:467:VHC_ANGLE', "waveplateVHC")
-        self.caputSetpoint('WPLT:IN20:459:CH1_ANGLE', "waveplateCH1")
-
-        self.caputSetpoint('FBCK:FB03:TR04:S1DES', "undLaunchPosX")
-        self.caputSetpoint('FBCK:FB03:TR04:S2DES', "undLaunchAngX")
-        self.caputSetpoint('FBCK:FB03:TR04:S3DES', "undLaunchPosY")
-        self.caputSetpoint('FBCK:FB03:TR04:S4DES', "undLaunchAngY")
-
-        self.caputSetpoint('FBCK:FB04:LG01:DL2VERNIER', "vernier")
-        self.caputSetpoint('ACCL:LI25:1:PDES', "phaseL3")
-
-        self.printStatusMessage('Set Xcav, LHWP, Und Launch, L3 Phase and '
-                                'Vernier')
 
     ############################################################################
     # HHHHHHHHHIIIIIIIIIIIIIIIIIIIIII
     # ZIIIIIMMMMMMMMMMMMMMMMMMMMMMMEEEEEEEEERRRRRRRRRRRRRRRRRRRRRRRR
     ############################################################################
 
-    def caputSetpoint(self, pv, key):
+    def caputSetpoint(self, key):
         self.printStatusMessage("Setting " + key + " to: "
-                                + str(self.setpoints[key]))
-        caput(pv, self.setpoints[key])
+                                + str(self.setpoints[key].val))
+        caput(self.setpoints[key].setPV, self.setpoints[key].val)
 
     # Set gas detector recipe/pressure and pmt voltages
     def setGdet(self):
+
+        def changeRecipe(pressureDes, pressureSleep, recipeVal):
+            caput('VFC:FEE1:GD01:' + pressureDes, 0.0)
+            caput('VFC:FEE1:GD02:' + pressureDes, 0.0)
+            sleep(pressureSleep)
+
+            caput('VFC:FEE1:GD01:RECIPE_DES', recipeVal)
+            caput('VFC:FEE1:GD02:RECIPE_DES', recipeVal)
+            sleep(1.5)
+
         QApplication.processEvents()
         if self.ui.pmt_cb.isChecked():
             self.printStatusMessage('Setting PMT voltages/Calibration/Offset')
             QApplication.processEvents()
 
-            for PMT in ["241", "242", "361", "362"]:
-                self.caputSetpoint('HVCH:FEE1:' + PMT + ':VoltageSet',
-                                   "voltagePMT" + PMT)
-
-                self.caputSetpoint('GDET:FEE1:' + PMT + ':CALI',
-                                   "calibrationPMT" + PMT)
-
-                self.caputSetpoint('GDET:FEE1:' + PMT + ':OFFS',
-                                   "offsetPMT" + PMT)
+            self.caputKeyList("PMT")
 
             self.printStatusMessage('Set PMT voltages/Calibration/Offset')
 
-        self.setPressuresForHardMirrorChange()
-        self.setPressuresForSoftMirrorChange()
+        if self.ui.recipe_cb.isChecked():
+            if (self.mirrorStatus["needToChangeM1"]
+                    and self.mirrorStatus["softPositionNeeded"]):
 
-        # No recipe change needed, not switching between hard/soft xrays
-        if not self.mirrorStatus["needToChangeM1"]:
-            if self.ui.pressure_cb.isChecked():
-                self.printStatusMessage('Setting pressures')
-                QApplication.processEvents()
-
-                self.caputSetpoint('VFC:FEE1:GD01:PLO_DES', "GD1PressureLo")
-                self.caputSetpoint('VFC:FEE1:GD02:PLO_DES', "GD2PressureLo")
-                self.caputSetpoint('VFC:FEE1:GD01:PHI_DES', "GD1PressureHi")
-                self.caputSetpoint('VFC:FEE1:GD02:PHI_DES', "GD2PressureHi")
-
-    def setPressuresForSoftMirrorChange(self):
-        # Mirror change to soft setting
-        if (self.mirrorStatus["needToChangeM1"]
-                and self.mirrorStatus["softPositionNeeded"]):
-
-            if self.ui.recipe_cb.isChecked():
                 self.printStatusMessage('Changing recipe from high to low')
                 QApplication.processEvents()
 
-                caput('VFC:FEE1:GD01:PHI_DES', '0')
-                caput('VFC:FEE1:GD02:PHI_DES', '0')
-                sleep(14)
-                caput('VFC:FEE1:GD01:RECIPE_DES', '4')
-                caput('VFC:FEE1:GD02:RECIPE_DES', '4')
-                sleep(1.5)
+                changeRecipe("PHI_DES", 14, 4)
 
-            if self.ui.pressure_cb.isChecked():
-                self.printStatusMessage('Setting pressures')
-                QApplication.processEvents()
-
-                self.caputSetpoint('VFC:FEE1:GD01:PLO_DES', "GD1PressureLo")
-                self.caputSetpoint('VFC:FEE1:GD02:PLO_DES', "GD2PressureLo")
-
-    def setPressuresForHardMirrorChange(self):
-        # Mirror change required, and changing to hard xray setting; or somehow
-        # are running hard xrays with low recipe (has happened and then OPS
-        # thinks there is no FEL)
-        if self.mirrorStatus["hardPositionNeeded"]:
-            if self.ui.recipe_cb.isChecked():
+            elif self.mirrorStatus["hardPositionNeeded"]:
                 self.printStatusMessage('Going to high recipe')
                 QApplication.processEvents()
 
-                caput('VFC:FEE1:GD01:RECIPE_DES', '3')
-                caput('VFC:FEE1:GD02:RECIPE_DES', '3')
-                sleep(1.5)
+                changeRecipe("PLO_DES", 0, 3)
 
-            if self.ui.pressure_cb.isChecked():
-                self.printStatusMessage('Setting pressures')
-                QApplication.processEvents()
+        if self.ui.pressure_cb.isChecked():
+            self.printStatusMessage('Setting pressures')
+            QApplication.processEvents()
 
-                caput('VFC:FEE1:GD01:PLO_DES', 0.0)
-                caput('VFC:FEE1:GD02:PLO_DES', 0.0)
+            self.caputKeyList("pressure")
 
-                self.caputSetpoint('VFC:FEE1:GD01:PHI_DES', "GD1PressureHi")
-                self.caputSetpoint('VFC:FEE1:GD02:PHI_DES', "GD2PressureHi")
-
-    # Ripped off from Lauren Alsberg, thanks yo!
-    def get_hist(self, pv, timeStart, timeStop, *moreArgs):
-        url = self.format_url(pv, timeStart, timeStop, *moreArgs)
-        req = urlopen(url)
-        jdata = load(req)
-        return jdata
-
-    # noinspection PyUnusedLocal
-    @staticmethod
-    def format_url(pv, timeStart, timeStop, *moreArgs):
-        machine = 'lcls'
-        applianceFormat = ('http://' + machine
-                           + '-archapp.slac.stanford.edu/retrieval/data/'
-                             'getData.json?pv=' + pv + '&from=' + timeStart
-                           + '&to=' + timeStop + '&donotchunk')
-        return applianceFormat
-
-
-# Subclass to return a status from a thread (specifically the score loading
-# threads).  Stupid that threading.Thread by default doesn't return a value.
-# noinspection PyArgumentList
-class ThreadWithReturnValue(Thread):
-    def __init__(self, group=None, target=None, name=None,
-                 args=(), kwargs=None, Verbose=None):
-
-        if kwargs is None:
-            kwargs = {}
-
-        self._Thread__kwargs = None
-        self._Thread__args = None
-        self._Thread__target = None
-        self._return = None
-
-        Thread.__init__(self, group, target, name, args, kwargs, Verbose)
-
-    def run(self):
-        if self._Thread__target is not None:
-            self._return = self._Thread__target(*self._Thread__args,
-                                                **self._Thread__kwargs)
-
-    def join(self, **kwargs):
-        Thread.join(self)
-        return self._return
-
+    def caputKeyList(self, key):
+        for key in self.keyLists[key]:
+            try:
+                self.caputSetpoint(key)
+            except:
+                self.printStatusMessage("Error setting " + key)
 
 def main():
     app = QApplication(argv)
