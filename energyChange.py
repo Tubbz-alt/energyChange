@@ -976,7 +976,7 @@ class EnergyChange(QMainWindow):
 
         caput('FBCK:FB04:LG01:STATE', '0')
 
-        self.caputKeyList("6X6")
+        self.caputKeyList("6x6")
 
         sleep(.2)
 
