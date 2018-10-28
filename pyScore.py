@@ -25,19 +25,16 @@ class PyScore(object):
     #                              'despvs':[pv list],
     #                              'desvals':[list of values]}
     def read_pvs(self, region=None, date=None, time=None, pvs=None):
-        con = cx_Oracle.connect("/@MCCO")
-        cur = con.cursor()
 
         if not date or not time:
             print 'Must specify a date & time!'
-            self.closeConnection(con, cur)
             raise NameError('Must specify a date & time!')
 
         statement = ("select set_pt_sgnl_id,set_pt_sgnl_val,rb_sgnl_id,"
                      "rb_sgnl_val from score_snapshot_sgnl "
                      "where program_id = 1")
 
-        startTime, stopTime = self.time_adjust(date, time)
+        startTime, stopTime = time_adjust(date, time)
         stateDict = {"startTime": startTime, "stopTime": stopTime}
 
         statement += " and (mod_dte >= :startTime) and (mod_dte <= :stopTime)"
@@ -50,8 +47,8 @@ class PyScore(object):
         try:
             if not pvs:
                 # No PVs specified so get everything using the base statement
-                cur.execute(statement, stateDict)
-                new_data = cur.fetchall()
+                self.cur.execute(statement, stateDict)
+                new_data = self.cur.fetchall()
                 data += new_data[:]
             else:
                 # One or more PVs specified so the query is trickier
@@ -59,13 +56,12 @@ class PyScore(object):
                               "like :pvs)")
                 for pv in pvs:
                     stateDict['pvs'] = pv
-                    cur.execute(statement, stateDict)
-                    new_data = cur.fetchall()
+                    self.cur.execute(statement, stateDict)
+                    new_data = self.cur.fetchall()
                     data += new_data[:]
         except:
             print ('pyScore error in read_pvs - attempted executing: "'
                    + statement + '" ' + stateDict)
-            self.closeConnection(con, cur)
             raise
 
         if not data:
@@ -79,20 +75,14 @@ class PyScore(object):
 
             for element in data:
                 data_dict["desPVs"].append(element[0])
-                data_dict["desVals"].append(self.sanitize_val(element[1]))
+                data_dict["desVals"].append(sanitize_val(element[1]))
                 data_dict["actPVs"].append(element[2])
-                data_dict["actVals"].append(self.sanitize_val(element[3]))
+                data_dict["actVals"].append(sanitize_val(element[3]))
 
             if not data_dict:
                 print 'No data output. Check PV keyword for typos'
 
-            self.closeConnection(con, cur)
             return data_dict
-
-    @staticmethod
-    def closeConnection(con, cur):
-        cur.close()
-        con.close()
 
     # Returns a valid list of config dates based on the the user's energy
     # specification and time range specification. (see example.py for details)
@@ -110,7 +100,7 @@ class PyScore(object):
         clauses = ""
 
         if beg_date and end_date:
-            dstartTime, dstopTime = self.time_range_adjust(beg_date, end_date)
+            dstartTime, dstopTime = time_range_adjust(beg_date, end_date)
             stateDict['startTime'] = dstartTime
             stateDict['stopTime'] = dstopTime
             clauses = "and (mod_dte >= :startTime) and (mod_dte <= :stopTime) "
@@ -157,8 +147,7 @@ class PyScore(object):
                         data = self.cur.fetchone()
                         data_ar.append(data[0])
 
-                    regionDict['%s' % pv] = self.region_parse(data_ar,
-                                                              date=date)
+                    regionDict['%s' % pv] = region_parse(data_ar, date=date)
 
                 else:
                     print ('%s is not in SCORE. Maybe the PV is spelled wrong?'
@@ -186,7 +175,7 @@ class PyScore(object):
     # a config for a specific energy or where the user simply wants the first
     # sample number of configs
     # @param {float} Emin, Emax, est_energy, Edelta, energy
-    # returns a list of score structs with fields title, time, and comment
+    # returns a list of score structs with fields: title, time, and comment
     def Etime_array(self, samples=None, energy=None, Emin=None, Emax=None,
                     est_energy=None, Edelta=None):
         # Parse the input arguments
@@ -198,9 +187,6 @@ class PyScore(object):
         columns = [col[0] for col in self.cur.description]
         titleIdx = columns.index("CONFIG_TITLE")
         results = []
-
-        # for column in columns:
-        #     results[column] = []
 
         if not Emin and not Emax and est_energy:
             if Edelta:
@@ -218,9 +204,8 @@ class PyScore(object):
                                    "(?P<photonenergy>[0-9]+) eV, "
                                    "(?P<injectorcharge>[0-9]+)->"
                                    "(?P<dumpcharge>[0-9]+) pC")
-        num_rows = 0
 
-        for row in self.cur:
+        for count, row in enumerate(self.cur):
             if not row[titleIdx]:
                 continue
 
@@ -242,93 +227,92 @@ class PyScore(object):
 
             results.append(Struct(time=row[0], title=row[1], comment=row[2]))
 
-            num_rows += 1
-
-            if num_rows >= samples:
+            if count >= samples:
                 break
 
         return results
 
-    # For read_pvs method. This adds and subtracts some number of minutes
-    # (default = 3) from the config time the user specifies to generate a time
-    # range.
-    # This time range is used in a SQL command to find the correct config.
-    # This was more of an empirical find than anything else, but if I had to
-    # guess, it's probably due to the different way python interprets time and
-    # oracle interprets time and the difference in time from
-    # different regions when the 'save the world' action is taken on SCORE GUI.
-    @staticmethod
-    def time_adjust(date, time, delta=3):
-        dtformat = datetime.datetime(int(date[0:4]), int(date[5:7]),
-                                     int(date[8:]), int(time[0:2]),
-                                     int(time[3:5]), int(time[6:]))
-        startTime = dtformat - datetime.timedelta(minutes=delta)
-        stopTime = dtformat + datetime.timedelta(minutes=delta)
-        return startTime, stopTime
-
-    # For read_dates method. Returns a format that the SQL code requires to
-    # find configs between two dates.
-    # Also uses the end string 'now' as a flag for the current date and time
-    # if the user specifies 'now' instead of a specific date and time.
-    @staticmethod
-    def time_range_adjust(beg, end):
-
-        if end == 'now':
-            end = str(datetime.datetime.now())
-            decloc = end.find('.')
-            end = end[:decloc]
-
-        idtformat = datetime.datetime(int(beg[0:4]), int(beg[5:7]),
-                                      int(beg[8:10]), int(beg[11:13]),
-                                      int(beg[14:16]), int(beg[17:]))
-
-        fdtformat = datetime.datetime(int(end[0:4]), int(end[5:7]),
-                                      int(end[8:10]), int(end[11:13]),
-                                      int(end[14:16]), int(end[17:]))
-        return idtformat, fdtformat
-
-    @staticmethod
-    def sanitize_val(value):
-        """Sanitize a value fetched from the Oracle DB."""
-        try:
-            val = str(float(value))
-            if 'nan' in val:
-                san_val = 'NAN'
-            else:
-                san_val = float(value)
-
-        # When a None type is encountered
-        except TypeError:
-            san_val = 'NAN'
-
-        # When a string type is encountered (stuff like ONE_HERTZ, etc.)
-        except ValueError:
-            san_val = str(value)
-        return san_val
-
-    # For pvs_in_score method above. Returns a region without "LEM Undo".
-    # It also factors in the change in score regions after 2017 and the random
-    # occurences of old score regions being saved after 2017.
-    @staticmethod
-    def region_parse(array, date=None):
-        new_array = [x for x in array if not x == 'LEM Undo']
-        if not date:
-            # replaces new score names with old if date <= 2016
-            if int(str(date)[:4]) <= 2016:
-                new_array = [w.replace('Cu Linac-LEM', 'TD11 to BSY-LEM')
-                                 .replace('Hard BSY thru LTUH-LEM', 'LTU-LEM')
-                             for w in new_array]
-
-            # replaces old score names with new if date >= 2017
-            elif int(str(date)[:4]) >= 2017:
-                new_array = [w.replace('TD11 to BSY-LEM', 'Cu Linac-LEM')
-                                 .replace('LTU-LEM', 'Hard BSY thru LTUH-LEM')
-                             for w in new_array]
-
-        return list(set(new_array))[0]
-
     # Closes the connection to the SCORE Oracle database. Done after each main
     # method above.
     def exit_score(self):
-        self.closeConnection(self.con, self.cur)
+        self.cur.close()
+        self.con.close()
         return
+
+
+def sanitize_val(value):
+    """Sanitize a value fetched from the Oracle DB."""
+    try:
+        val = str(float(value))
+        if 'nan' in val:
+            san_val = 'NAN'
+        else:
+            san_val = float(value)
+
+    # When a None type is encountered
+    except TypeError:
+        san_val = 'NAN'
+
+    # When a string type is encountered (stuff like ONE_HERTZ, etc.)
+    except ValueError:
+        san_val = str(value)
+    return san_val
+
+
+# For read_pvs method. This adds and subtracts some number of minutes
+# (default = 3) from the config time the user specifies to generate a time
+# range.
+# This time range is used in a SQL command to find the correct config.
+# This was more of an empirical find than anything else, but if I had to
+# guess, it's probably due to the different way python interprets time and
+# oracle interprets time and the difference in time from
+# different regions when the 'save the world' action is taken on SCORE GUI.
+def time_adjust(date, time, delta=3):
+    dtformat = datetime.datetime(int(date[0:4]), int(date[5:7]),
+                                 int(date[8:]), int(time[0:2]),
+                                 int(time[3:5]), int(time[6:]))
+    startTime = dtformat - datetime.timedelta(minutes=delta)
+    stopTime = dtformat + datetime.timedelta(minutes=delta)
+    return startTime, stopTime
+
+
+# For read_dates method. Returns a format that the SQL code requires to
+# find configs between two dates.
+# Also uses the end string 'now' as a flag for the current date and time
+# if the user specifies 'now' instead of a specific date and time.
+def time_range_adjust(beg, end):
+
+    if end == 'now':
+        end = str(datetime.datetime.now())
+        decloc = end.find('.')
+        end = end[:decloc]
+
+    idtformat = datetime.datetime(int(beg[0:4]), int(beg[5:7]),
+                                  int(beg[8:10]), int(beg[11:13]),
+                                  int(beg[14:16]), int(beg[17:]))
+
+    fdtformat = datetime.datetime(int(end[0:4]), int(end[5:7]),
+                                  int(end[8:10]), int(end[11:13]),
+                                  int(end[14:16]), int(end[17:]))
+    return idtformat, fdtformat
+
+
+# For pvs_in_score method above. Returns a region without "LEM Undo".
+# It also factors in the change in score regions after 2017 and the random
+# occurences of old score regions being saved after 2017.
+def region_parse(array, date=None):
+    new_array = [x for x in array if not x == 'LEM Undo']
+    if not date:
+        # replaces new score names with old if date <= 2016
+        if int(str(date)[:4]) <= 2016:
+            new_array = [w.replace('Cu Linac-LEM', 'TD11 to BSY-LEM')
+                             .replace('Hard BSY thru LTUH-LEM', 'LTU-LEM')
+                         for w in new_array]
+
+        # replaces old score names with new if date >= 2017
+        elif int(str(date)[:4]) >= 2017:
+            new_array = [w.replace('TD11 to BSY-LEM', 'Cu Linac-LEM')
+                             .replace('LTU-LEM', 'Hard BSY thru LTUH-LEM')
+                         for w in new_array]
+
+    return list(set(new_array))[0]

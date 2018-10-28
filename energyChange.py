@@ -58,9 +58,9 @@ class EnergyChange(QMainWindow):
         # Instatiate python score class
         self.scoreObject = PyScore()
 
-        self.ui.statusText.setText(Utils.greetings[randint(0,
-                                                           len(Utils.greetings)
-                                                           - 1)])
+        greetingIdx = randint(0, len(Utils.greetings) - 1)
+        self.ui.statusText.setText(Utils.greetings[greetingIdx])
+
         self.loadStyleSheet()
 
         self.setpoints = {}
@@ -72,8 +72,7 @@ class EnergyChange(QMainWindow):
         self.scoreInfo = {"scoreStructs": [], "dateChosen": None,
                           "timeChosen": None}
 
-        # self.scoreInfo = {"comments": None, "titles": None, "times": None,
-        #                   "dateChosen": None, "timeChosen": None}
+        self.scoreData = {}
 
         self.klystronComplement = {"desired": {}, "original": {}}
 
@@ -130,7 +129,7 @@ class EnergyChange(QMainWindow):
         self.ui.scoretable.setDisabled(False)
 
         # Gets selected time from GUI and puts into usable format
-        self.formatTime()
+        self.getTimeInfo()
 
         # Clean slate!
         self.ui.scoretable.clearContents()
@@ -141,7 +140,7 @@ class EnergyChange(QMainWindow):
         end = str(self.timestamp["requested"] + timedelta(minutes=1))
         columnLst = ["mod_dte", "config_title", "descr"]
 
-        def filterFourWeeksBack(energy, photonColor, electronColor, delta):
+        def getScoreData(energy, photonColor, electronColor, delta):
             return self.filterScores(energy, photonColor, electronColor, delta,
                                      fourWeeksBack, end, columnLst)
 
@@ -156,18 +155,17 @@ class EnergyChange(QMainWindow):
                     self.ui.PhotonEnergyEdit.setText('350')
                     photonEnergy = 350
 
-                scoreData = filterFourWeeksBack(photonEnergy,
-                                                "color: rgb(100,255,100)",
-                                                "color: red", 300)
+                scoreData = getScoreData(photonEnergy,
+                                         "color: rgb(100,255,100)",
+                                         "color: red", 300)
 
             elif electronEnergyText:
-                scoreData = filterFourWeeksBack(float(electronEnergyText),
-                                                "color: red",
-                                                "color: rgb(100,255,100)", 0.5)
+                scoreData = getScoreData(float(electronEnergyText),
+                                         "color: red",
+                                         "color: rgb(100,255,100)", 0.5)
 
             else:
-                scoreData = filterFourWeeksBack(None, "color: red",
-                                                "color: red", None)
+                scoreData = getScoreData(None, "color: red", "color: red", None)
 
         except:
             self.printStatusMessage("Unable to filter SCORE's")
@@ -184,7 +182,7 @@ class EnergyChange(QMainWindow):
 
     # Take date/time from GUI and put it into format suitable for passing to
     # archiver
-    def formatTime(self):
+    def getTimeInfo(self):
         # Add zeroes to keep formatting consistent (i.e. 0135 for time
         # instead of 135)
         def reformat(val):
@@ -294,6 +292,7 @@ class EnergyChange(QMainWindow):
 
             reallyWantToChange = QMessageBox.question(self, "Sanity Check", txt,
                                                       "No", "Yes")
+
             if reallyWantToChange:
                 self.changeEnergy()
 
@@ -313,10 +312,10 @@ class EnergyChange(QMainWindow):
     def getValues(self):
 
         self.ui.restoreButton.setDisabled(True)
-        self.formatTime()
+        self.getTimeInfo()
 
         self.printStatusMessage("<b>Getting values...</b>")
-        # self.updateProgress(5 - self.diagnostics["progress"])
+        self.updateProgress(0 - self.diagnostics["progress"])
 
         QApplication.processEvents()
 
@@ -355,7 +354,6 @@ class EnergyChange(QMainWindow):
 
         # We have values and are ready for the energy change
         self.diagnostics["valsObtained"] = True
-
         return
 
     def updateProgress(self, increment):
@@ -405,6 +403,7 @@ class EnergyChange(QMainWindow):
                     # If station on, make light green
                     brush = QBrush(QColor(100, 255, 100))
                 else:
+                    # Else red
                     brush = QBrush(QColor(255, 0, 0))
 
                 Utils.paintCell(self.ui.tableWidget, row, column, item, brush)
@@ -575,16 +574,19 @@ class EnergyChange(QMainWindow):
 
             # Write textBrowser text to a file so I can diagnose the basics
             # when something goes wrong
-            fh = open("/home/physics/zimmerc/python/echg_log.txt", "a")
+            with open("log.txt", "r+") as f:
+                # Reading only the first 70,000 bytes of the log file (should
+                # work out to approximately 1 week of logs. I can't imagine
+                # needing more history than that)
+                head = f.read(70000)
 
-            curtime = datetime.now()
-            # Include time GUI was run and what score config was loaded
-            fh.write("\n\n" + self.scoreInfo["dateChosen"] + " " +
-                     self.scoreInfo["timeChosen"] + "\n"
-                     + str(curtime)[0:10] + " " + str(curtime)[11:16] + "\n"
-                     + self.ui.textBrowser.toPlainText())
-
-            fh.close()
+                # Moving to the front of the file so that we can prepend the new
+                # log data
+                f.seek(0, 0)
+                f.write(self.scoreInfo["dateChosen"] + " "
+                        + self.scoreInfo["timeChosen"] + "\n"
+                        + str(curtime)[0:10] + " " + str(curtime)[11:16] + "\n"
+                        + self.ui.textBrowser.toPlainText() + "\n\n" + head)
 
         except:
             self.printStatusMessage('problem with time logging or log writing',
@@ -664,7 +666,7 @@ class EnergyChange(QMainWindow):
         self.ui.startButton.setText('Get Values')
 
         # Format user time so it is ready to pass to Archiver
-        self.formatTime()
+        self.getTimeInfo()
 
         self.updateProgress(-self.diagnostics["progress"])
 
@@ -829,13 +831,15 @@ class EnergyChange(QMainWindow):
         regionList = []
 
         if self.ui.injector_cb.isChecked():
-            regionList.append("Gun to TD11-LEM")
+            self.getScoreData("Gun to TD11-LEM", regionList)
 
         if self.ui.score_cb.isChecked():
-            regionList.extend(("Cu Linac-LEM", "Hard BSY thru LTUH-LEM"))
+            for region in ["Cu Linac-LEM", "Hard BSY thru LTUH-LEM"]:
+                self.getScoreData(region, regionList)
 
         if self.ui.taper_cb.isChecked():
-            regionList.extend(("Undulator Taper", "Undulator-LEM"))
+            for region in ["Undulator Taper", "Undulator-LEM"]:
+                self.getScoreData(region, regionList)
 
         # Put message in message log that scores are being loaded
         for region in regionList:
@@ -850,10 +854,24 @@ class EnergyChange(QMainWindow):
             # file); normal threading class returns NONE
             t = Utils.ThreadWithReturnValue(target=self.scoreThread,
                                             args=(region,))
+
             self.diagnostics["threads"].append(t)
 
         for thread in self.diagnostics["threads"]:
             thread.start()
+
+    def getScoreData(self, region, regionList):
+        try:
+            data = self.scoreObject.read_pvs(region,
+                                             self.scoreInfo["dateChosen"],
+                                             self.scoreInfo["timeChosen"]
+                                             + ':00')
+            self.scoreData[region] = data
+
+            regionList.append(region)
+
+        except:
+            print "Error getting SCORE data for " + region
 
     def checkScoreLoads(self):
         self.printStatusMessage("Waiting for SCORE regions to load...")
@@ -882,18 +900,9 @@ class EnergyChange(QMainWindow):
 
     # Thread function for loading each individual score region
     def scoreThread(self, region):
-        try:
-            data = self.scoreObject.read_pvs(region,
-                                             self.scoreInfo["dateChosen"],
-                                             self.scoreInfo["timeChosen"]
-                                             + ':00')
-        except:
-            print "Error in scoreThread getting data for " + region
-            return 1, region
 
         try:
-            # return 0, region
-            errors = Utils.setDevices(region, data)
+            errors = Utils.setDevices(region, self.scoreData[region])
             return (len(errors) if errors is not None else 1), region
         except:
             print "Error in scoreThread setting data for " + region
@@ -995,7 +1004,9 @@ class EnergyChange(QMainWindow):
         # Set feedback setpoints, laser heater, L3 phase, laser heater camera
         # waveplates, vernier etc.
         if self.ui.setpoints_cb.isChecked():
-            self.setSetpoints()
+            self.caputKeyList("setpoints")
+            self.printStatusMessage('Set Xcav, LHWP, Und Launch, L3 Phase and '
+                                    'Vernier')
 
         if self.ui.pstack_cb.isChecked():
             self.caputKeyList("pulseStacker")
@@ -1089,16 +1100,6 @@ class EnergyChange(QMainWindow):
         self.caputKeyList("BC2")
 
         self.printStatusMessage('Set BC2 Mover and Phase')
-
-    # Set random setpoints (xcav, und launch, lhwp etc.)
-    def setSetpoints(self):
-        self.printStatusMessage('Setting Xcav, LHWP, Und Launch, L3P and '
-                                'vernier')
-
-        self.caputKeyList("setpoints")
-
-        self.printStatusMessage('Set Xcav, LHWP, Und Launch, L3 Phase and '
-                                'Vernier')
 
     ############################################################################
     # HHHHHHHHHIIIIIIIIIIIIIIIIIIIIII

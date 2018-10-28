@@ -11,6 +11,7 @@ from subprocess import Popen
 from datetime import datetime
 
 
+# Utility class to try to replicate C struct functionality
 class Struct:
     def __init__(self, **kwds):
         self.__dict__.update(kwds)
