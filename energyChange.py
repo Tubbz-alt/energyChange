@@ -6,7 +6,7 @@
 # BC1 collimators BC2 phase PV (SIOC:SYS0:ML00:AO063) for different R56;
 # moves mirrors; standardizes and sets vernier/L3 Phase along with UND/LTU
 # feedback matrices and other things I haven't documented yet.
-
+from os import path
 from sys import exit, argv
 from PyQt4.QtCore import QTime, QDate, Qt
 
@@ -35,7 +35,7 @@ from energyChange_UI import Ui_EnergyChange
 class EnergyChange(QMainWindow):
     def __init__(self, parent=None):
         QMainWindow.__init__(self, parent)
-        self.cssFile = "style.css"
+        self.cssFile = path.join(Utils.CURR_DIR, "style.css")
         self.ui = Ui_EnergyChange()
         self.ui.setupUi(self)
         self.ui.scoretable.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -99,7 +99,7 @@ class EnergyChange(QMainWindow):
         # Get list of recent configs and populate GUI score table
         self.getScores()
         self.makeConnections()
-        self.ui.startButton.setEnabled(False)
+
 
     # Make gui SO PRETTY!
     def loadStyleSheet(self):
@@ -299,7 +299,7 @@ class EnergyChange(QMainWindow):
             else:
                 self.printStatusMessage("Energy change aborted")
 
-    def printStatusMessage(self, message, printToStatus=True):
+    def printStatusMessage(self, message, printToStatus=False):
         print message
         self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
                                    + "-</i> " + message)
@@ -541,11 +541,12 @@ class EnergyChange(QMainWindow):
 
         # Everything went fine- woohoo!
         if not self.diagnostics["scoreProblem"]:
-            self.printStatusMessage("DONE- remember CAMs!")
+            self.printStatusMessage("DONE- remember CAMs!", True)
 
         # If there was some problem loading scores, inform the user.
         else:
-            self.printStatusMessage("DONE - problem loading scores, SEE XTERM")
+            self.printStatusMessage("DONE - problem loading scores, SEE XTERM",
+                                    True)
 
         self.logTime()
 
@@ -560,7 +561,7 @@ class EnergyChange(QMainWindow):
             if energyDiff > 0.005:
                 if self.diagnostics["scoreProblem"]:
                     self.printStatusMessage("Skipping STDZ - problem loading "
-                                            "scores")
+                                            "scores", True)
                 else:
                     self.stdzMags()
 
@@ -571,14 +572,15 @@ class EnergyChange(QMainWindow):
             elapsed = curtime - self.timestamp["changeStarted"]
             old_value = caget('SIOC:SYS0:ML03:AO707')
             caput('SIOC:SYS0:ML03:AO707', old_value + elapsed.total_seconds())
+            logFile = path.join(Utils.CURR_DIR, "log.txt")
 
             # Write textBrowser text to a file so I can diagnose the basics
             # when something goes wrong
-            with open("log.txt", "r+") as f:
-                # Reading only the first 70,000 bytes of the log file (should
-                # work out to approximately 1 week of logs. I can't imagine
+            with open(logFile, "r+") as f:
+                # Reading only the first 140,000 bytes of the log file (should
+                # work out to approximately 2 weeks of logs. I can't imagine
                 # needing more history than that)
-                head = f.read(70000)
+                head = f.read(140000)
 
                 # Moving to the front of the file so that we can prepend the new
                 # log data
@@ -700,7 +702,7 @@ class EnergyChange(QMainWindow):
         # User hasn't gotten values yet, hence
         # self.klystronComplement["desired"] doesn't yet exist so just ignore
         # this error
-        except AttributeError:
+        except KeyError:
             self.printStatusMessage("Error changing " + str(sector) + "-"
                                     + str(station))
             pass
@@ -874,7 +876,7 @@ class EnergyChange(QMainWindow):
             print "Error getting SCORE data for " + region
 
     def checkScoreLoads(self):
-        self.printStatusMessage("Waiting for SCORE regions to load...")
+        self.printStatusMessage("Waiting for SCORE regions to load...", True)
 
         try:
             for thread in self.diagnostics["threads"]:

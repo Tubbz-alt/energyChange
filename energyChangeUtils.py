@@ -2,13 +2,16 @@ import time
 
 from PyQt4.QtCore import QDate, QTime, Qt
 from PyQt4.QtGui import QTableWidgetItem
-from os import popen
+from os import popen, path
 from epics import caget, caput
 from threading import Thread
 from urllib2 import urlopen
 from json import load
 from subprocess import Popen
 from datetime import datetime
+
+
+CURR_DIR = path.abspath(path.dirname(__file__))
 
 
 # Utility class to try to replicate C struct functionality
