@@ -1,3 +1,401 @@
+2018-11-11 08:20
+2018-11-11 20:37
+Message Log:
+
+Energy Change Initialized. Pick a time.
+20:36:09- Getting values...
+20:36:09- undLaunchAngY: -0.0
+20:36:09- undLaunchAngX: 0.0
+20:36:09- offsetPMT361: 0.000182046673912
+20:36:09- offsetPMT362: -0.000364797718555
+20:36:09- GD02PressureHi: 0.0501
+20:36:09- heaterWaveplate1: 118.0
+20:36:09- heaterWaveplate2: 54.1567857459
+20:36:10- GD01PressureHi: 0.0501
+20:36:10- pulseStackerWaveplate: 38.0
+20:36:10- waveplateCH1: 126.0
+20:36:10- BC1LeftJaw: -4.9
+20:36:10- GD01PressureLo: 0.0501
+20:36:11- BC2Phase: 47.9655089825
+20:36:11- peakCurrentL2: 3300.0
+20:36:12- calibrationPMT242: -1.70951286458e-07
+20:36:12- calibrationPMT241: -1.60855042922e-07
+20:36:12- BC1PeakCurrent: 160.0
+20:36:12- phaseL3: -5.0
+20:36:12- waveplateVHC: 147.5
+20:36:12- amplitudeL2: 3073.17589821
+20:36:12- amplitudeL3: 496.545109144
+20:36:12- calibrationPMT361: -2.5245432562e-07
+20:36:12- calibrationPMT362: -4.61515603773e-07
+20:36:12- phaseL1X: -160.0
+20:36:12- amplitudeL1X: 16.0
+20:36:12- undLaunchPosY: 0.145
+20:36:12- undLaunchPosX: 0.0
+20:36:12- pulseStackerDelay: 11.0
+20:36:12- GD02PressureLo: 0.0501
+20:36:12- xcavLaunchX: 1.625
+20:36:12- photonEnergyCurrent: 9504.14148694
+20:36:12- photonEnergyDesired: 562.70998709
+20:36:12- electronEnergyCurrent: 14.4857
+20:36:12- electronEnergyDesired: 3.49
+20:36:12- vernier: 0.0
+20:36:12- offsetPMT241: 0.000299731888361
+20:36:12- BC2Mover: 385.012058836
+20:36:12- phaseL2: -32.9087528448
+20:36:13- offsetPMT242: 0.000200552644153
+20:36:13- positionDesiredM3S: 4501.52089986
+20:36:13- positionCurrentM3S: 4501.52089986
+20:36:13- voltagePMT241: 500.0
+20:36:13- voltagePMT242: 500.0
+20:36:13- voltagePMT362: 630.0
+20:36:13- voltagePMT361: 570.0
+20:36:13- xcavLaunchY: 0.0
+20:36:13- BC1RightJaw: 0.5
+20:36:13- Soft/Hard mirror change needed
+20:36:13- Will change M1 mirror to Soft
+20:36:16- I will standardize!!!
+20:36:16- Will switch to 562.7eV (3.49GeV)
+20:36:43- Energy change aborted
+20:36:46- Setting values...
+20:36:46- Working...
+20:36:46- Inserting stoppers, disabling feedbacks
+20:36:47- Stoppers inserted and feedbacks disabled
+20:36:47- Setting M1 for Soft
+20:36:47- Setting M3 for AMO
+20:36:48- Loading Scores...
+20:36:48- Loading SCORE from 2018-11-11 08:20 for Cu Linac-LEM
+20:36:48- Loading SCORE from 2018-11-11 08:20 for Hard BSY thru LTUH-LEM
+20:36:49- Loading SCORE from 2018-11-11 08:20 for Undulator Taper
+20:36:50- Loading SCORE from 2018-11-11 08:20 for Undulator-LEM
+20:36:50- Imma do the klystron complement
+20:36:54- Done messing with klystrons
+20:36:54- Setting 6x6 Parameters and LTU/UND feedback matrices
+20:36:54- Setting BC1PeakCurrent to: 160.0
+20:36:54- Setting amplitudeL2 to: 3073.17589821
+20:36:54- Setting phaseL2 to: -32.9087528448
+20:36:54- Setting peakCurrentL2 to: 3300.0
+20:36:54- Setting amplitudeL3 to: 496.545109144
+20:36:54- Setting 6x6 complete
+20:36:54- Setting PMT voltages/Calibration/Offset
+20:36:54- Setting voltagePMT241 to: 500.0
+20:36:54- Setting calibrationPMT241 to: -1.60855042922e-07
+20:36:54- Setting offsetPMT241 to: 0.000299731888361
+20:36:55- Setting voltagePMT242 to: 500.0
+20:36:55- Setting calibrationPMT242 to: -1.70951286458e-07
+20:36:55- Setting offsetPMT242 to: 0.000200552644153
+20:36:55- Setting voltagePMT361 to: 570.0
+20:36:55- Setting calibrationPMT361 to: -2.5245432562e-07
+20:36:55- Setting offsetPMT361 to: 0.000182046673912
+20:36:55- Setting voltagePMT362 to: 630.0
+20:36:55- Setting calibrationPMT362 to: -4.61515603773e-07
+20:36:55- Setting offsetPMT362 to: -0.000364797718555
+20:36:55- Set PMT voltages/Calibration/Offset
+20:36:55- Changing recipe from high to low
+20:37:10- Setting pressures
+20:37:10- Setting GD01PressureHi to: 0.0501
+20:37:10- Setting GD02PressureHi to: 0.0501
+20:37:10- Setting GD01PressureLo to: 0.0501
+20:37:10- Setting GD02PressureLo to: 0.0501
+20:37:10- Sending LTU/UND matrices to feedbacks
+20:37:13- Sent LTU/UND matrices to feedbacks and stopped/started
+20:37:13- BC2 Mover/Phase look the same, not sending values
+20:37:13- Setting xcavLaunchX to: 1.625
+20:37:13- Setting xcavLaunchY to: 0.0
+20:37:13- Setting heaterWaveplate1 to: 118.0
+20:37:13- Setting heaterWaveplate2 to: 54.1567857459
+20:37:13- Setting waveplateVHC to: 147.5
+20:37:13- Setting waveplateCH1 to: 126.0
+20:37:13- Setting undLaunchPosX to: 0.0
+20:37:13- Setting undLaunchAngX to: 0.0
+20:37:14- Setting undLaunchPosY to: 0.145
+20:37:14- Setting undLaunchAngY to: -0.0
+20:37:14- Setting vernier to: 0.0
+20:37:14- Setting phaseL3 to: -5.0
+20:37:14- Set Xcav, LHWP, Und Launch, L3 Phase and Vernier
+20:37:14- Setting pulseStackerDelay to: 11.0
+20:37:14- Setting pulseStackerWaveplate to: 38.0
+20:37:14- Set pulse stacker delay and waveplate
+20:37:14- Setting amplitudeL1X to: 16.0
+20:37:14- Setting phaseL1X to: -160.0
+20:37:14- Set L1X phase and amplitude
+20:37:14- Setting BC1LeftJaw to: -4.9
+20:37:14- Setting BC1RightJaw to: 0.5
+20:37:14- Set BC1 collimators
+20:37:14- Waiting for SCORE regions to load...
+20:37:24- Set/trimmed devices for Cu Linac-LEM
+20:37:24- Set/trimmed devices for Hard BSY thru LTUH-LEM
+20:37:24- Set/trimmed devices for Undulator Taper
+20:37:24- Set/trimmed devices for Undulator-LEM
+20:37:24- Waiting for BEND:DMP1:400:CTRL to read "Ready"...
+20:37:39- Starting STDZ
+20:37:39- Checking M1 Mirror Position for Soft...
+20:37:39- Detected M1 Mirror in Soft Position
+20:37:39- Checking M3 Mirror Position for AMO...
+20:37:39- Detected M3 Mirror in AMO Position
+20:37:39- DONE- remember CAMs!
+
+2018-11-01 07:24
+2018-11-02 17:18
+Message Log:
+
+Energy Change Initialized. Pick a time.
+17:17:42- Getting values...
+17:17:42- undLaunchAngY: 0.0
+17:17:42- undLaunchAngX: 0.0004
+17:17:42- offsetPMT361: 0.0206486028333
+17:17:42- offsetPMT362: 0.0159602025227
+17:17:42- GD02PressureHi: 2.0
+17:17:42- heaterWaveplate1: 129.0
+17:17:42- heaterWaveplate2: 54.1567857459
+17:17:42- GD01PressureHi: 2.0
+17:17:42- pulseStackerWaveplate: 38.0
+17:17:42- waveplateCH1: 123.0
+17:17:42- BC1LeftJaw: -5.0
+17:17:43- GD01PressureLo: 2.0
+17:17:44- BC2Phase: 47.9655089825
+17:17:44- peakCurrentL2: 3700.0
+17:17:44- calibrationPMT242: -6.81316848787e-06
+17:17:44- calibrationPMT241: -8.28264703469e-06
+17:17:44- BC1PeakCurrent: 230.0
+17:17:44- phaseL3: -5.0
+17:17:44- waveplateVHC: 146.5
+17:17:44- amplitudeL2: 5126.10886345
+17:17:44- amplitudeL3: 8054.95562926
+17:17:44- calibrationPMT361: -5.10533319755e-06
+17:17:44- calibrationPMT362: -4.67055168169e-06
+17:17:44- phaseL1X: -160.0
+17:17:44- amplitudeL1X: 20.0
+17:17:44- undLaunchPosY: 0.0
+17:17:44- undLaunchPosX: 0.002
+17:17:44- pulseStackerDelay: 11.0
+17:17:44- GD02PressureLo: 2.0
+17:17:44- xcavLaunchX: 1.6
+17:17:45- photonEnergyCurrent: 929.823393111
+17:17:45- photonEnergyDesired: 8377.95896403
+17:17:45- electronEnergyCurrent: 4.524
+17:17:45- electronEnergyDesired: 13.595
+17:17:45- vernier: 0.0
+17:17:45- offsetPMT241: 0.0206707096627
+17:17:45- BC2Mover: 385.012058836
+17:17:45- phaseL2: -32.0821494698
+17:17:45- offsetPMT242: 0.023492938163
+17:17:45- positionDesiredM3S: 4501.53209987
+17:17:45- positionCurrentM3S: -4503.27820013
+17:17:45- voltagePMT241: 600.0
+17:17:45- voltagePMT242: 600.0
+17:17:45- voltagePMT362: 800.0
+17:17:45- voltagePMT361: 700.0
+17:17:45- xcavLaunchY: 0.01
+17:17:45- BC1RightJaw: 2.5
+17:17:46- Soft/Hard mirror change needed
+17:17:46- Will change M1 mirror to Hard
+17:17:46- M3 will be changed to provide beam to AMO (unless beam will be going down hard line)
+17:17:46- Will switch to 8378.0eV (13.6GeV)
+17:17:49- Setting values...
+17:17:49- Working...
+17:17:49- Inserting stoppers, disabling feedbacks
+17:17:50- Stoppers inserted and feedbacks disabled
+17:17:50- Setting M1 for Hard
+17:17:50- Loading Scores...
+17:17:50- Loading SCORE from 2018-11-01 07:24 for Cu Linac-LEM
+17:17:51- Loading SCORE from 2018-11-01 07:24 for Hard BSY thru LTUH-LEM
+17:17:51- Loading SCORE from 2018-11-01 07:24 for Undulator Taper
+17:17:52- Loading SCORE from 2018-11-01 07:24 for Undulator-LEM
+17:17:53- Imma do the klystron complement
+17:17:56- Done messing with klystrons
+17:17:56- Setting 6x6 Parameters and LTU/UND feedback matrices
+17:17:57- Setting BC1PeakCurrent to: 230.0
+17:17:57- Setting amplitudeL2 to: 5126.10886345
+17:17:57- Setting phaseL2 to: -32.0821494698
+17:17:57- Setting peakCurrentL2 to: 3700.0
+17:17:57- Setting amplitudeL3 to: 8054.95562926
+17:17:57- Setting 6x6 complete
+17:17:57- Setting PMT voltages/Calibration/Offset
+17:17:57- Setting voltagePMT241 to: 600.0
+17:17:57- Setting calibrationPMT241 to: -8.28264703469e-06
+17:17:57- Setting offsetPMT241 to: 0.0206707096627
+17:17:57- Setting voltagePMT242 to: 600.0
+17:17:57- Setting calibrationPMT242 to: -6.81316848787e-06
+17:17:57- Setting offsetPMT242 to: 0.023492938163
+17:17:57- Setting voltagePMT361 to: 700.0
+17:17:57- Setting calibrationPMT361 to: -5.10533319755e-06
+17:17:57- Setting offsetPMT361 to: 0.0206486028333
+17:17:57- Setting voltagePMT362 to: 800.0
+17:17:57- Setting calibrationPMT362 to: -4.67055168169e-06
+17:17:57- Setting offsetPMT362 to: 0.0159602025227
+17:17:57- Set PMT voltages/Calibration/Offset
+17:17:57- Going to high recipe
+17:17:59- Setting pressures
+17:17:59- Setting GD01PressureHi to: 2.0
+17:17:59- Setting GD02PressureHi to: 2.0
+17:17:59- Setting GD01PressureLo to: 2.0
+17:17:59- Setting GD02PressureLo to: 2.0
+17:17:59- Sending LTU/UND matrices to feedbacks
+17:18:02- Sent LTU/UND matrices to feedbacks and stopped/started
+17:18:02- Setting BC2 Mover and Phase
+17:18:02- Setting BC2Mover to: 385.012058836
+17:18:02- Setting BC2Phase to: 47.9655089825
+17:18:02- Set BC2 Mover and Phase
+17:18:02- Setting xcavLaunchX to: 1.6
+17:18:02- Setting xcavLaunchY to: 0.01
+17:18:02- Setting heaterWaveplate1 to: 129.0
+17:18:02- Setting heaterWaveplate2 to: 54.1567857459
+17:18:02- Setting waveplateVHC to: 146.5
+17:18:02- Setting waveplateCH1 to: 123.0
+17:18:02- Setting undLaunchPosX to: 0.002
+17:18:02- Setting undLaunchAngX to: 0.0004
+17:18:02- Setting undLaunchPosY to: 0.0
+17:18:02- Setting undLaunchAngY to: 0.0
+17:18:02- Setting vernier to: 0.0
+17:18:02- Setting phaseL3 to: -5.0
+17:18:02- Set Xcav, LHWP, Und Launch, L3 Phase and Vernier
+17:18:02- Setting pulseStackerDelay to: 11.0
+17:18:02- Setting pulseStackerWaveplate to: 38.0
+17:18:02- Set pulse stacker delay and waveplate
+17:18:02- Setting amplitudeL1X to: 20.0
+17:18:02- Setting phaseL1X to: -160.0
+17:18:02- Set L1X phase and amplitude
+17:18:02- Setting BC1LeftJaw to: -5.0
+17:18:02- Setting BC1RightJaw to: 2.5
+17:18:02- Set BC1 collimators
+17:18:02- Waiting for SCORE regions to load...
+17:18:27- Set/trimmed devices for Cu Linac-LEM
+17:18:27- Set/trimmed devices for Hard BSY thru LTUH-LEM
+17:18:27- Set/trimmed devices for Undulator Taper
+17:18:27- Set/trimmed devices for Undulator-LEM
+17:18:27- Checking M1 Mirror Position for Hard...
+17:18:27- Detected M1 Mirror in Hard Position
+17:18:27- DONE- remember CAMs!
+
+2018-10-31 08:04
+2018-10-31 20:42
+Message Log:
+
+Energy Change Initialized. Pick a time.
+20:41:19- Getting values...
+20:41:19- undLaunchAngY: 0.0
+20:41:19- undLaunchAngX: 0.0008
+20:41:19- offsetPMT361: -0.0220036324102
+20:41:20- offsetPMT362: -0.0250255638584
+20:41:20- GD02PressureHi: 2.0
+20:41:20- heaterWaveplate1: 129.0
+20:41:20- heaterWaveplate2: 56.1567857459
+20:41:20- GD01PressureHi: 2.0
+20:41:23- pulseStackerWaveplate: 38.0
+20:41:23- waveplateCH1: 122.0
+20:41:23- BC1LeftJaw: -5.0
+20:41:23- GD01PressureLo: 2.0
+20:41:24- BC2Phase: 47.9655089825
+20:41:24- peakCurrentL2: 3600.0
+20:41:24- calibrationPMT242: -6.77614122787e-06
+20:41:24- calibrationPMT241: -8.29164060392e-06
+20:41:24- BC1PeakCurrent: 230.0
+20:41:24- phaseL3: -5.0
+20:41:24- waveplateVHC: 147.5
+20:41:24- amplitudeL2: 5144.63082966
+20:41:24- amplitudeL3: 8085.03764749
+20:41:24- calibrationPMT361: -5.04843587454e-06
+20:41:24- calibrationPMT362: -4.50117647343e-06
+20:41:24- phaseL1X: -160.0
+20:41:24- amplitudeL1X: 20.0
+20:41:24- undLaunchPosY: 0.0
+20:41:24- undLaunchPosX: 0.003
+20:41:25- pulseStackerDelay: 11.0
+20:41:25- GD02PressureLo: 2.0
+20:41:25- xcavLaunchX: 1.55
+20:41:25- photonEnergyCurrent: 598.035482584
+20:41:25- photonEnergyDesired: 8392.55101708
+20:41:25- electronEnergyCurrent: 3.627
+20:41:25- electronEnergyDesired: 13.595
+20:41:25- vernier: 11.0988255804
+20:41:25- offsetPMT241: -0.0217217034118
+20:41:26- BC2Mover: 385.012058836
+20:41:26- phaseL2: -31.5589080149
+20:41:26- offsetPMT242: -0.0241045672477
+20:41:26- positionDesiredM3S: 4501.53209987
+20:41:26- positionCurrentM3S: 4501.53209987
+20:41:26- voltagePMT241: 600.0
+20:41:26- voltagePMT242: 600.0
+20:41:26- voltagePMT362: 800.0
+20:41:26- voltagePMT361: 700.0
+20:41:26- xcavLaunchY: 0.01
+20:41:27- BC1RightJaw: 2.5
+20:41:27- Soft/Hard mirror change needed
+20:41:27- Will change M1 mirror to Hard
+20:41:27- Will switch to 8392.6eV (13.6GeV)
+20:41:39- Setting values...
+20:41:39- Working...
+20:41:39- Inserting stoppers, disabling feedbacks
+20:41:40- Stoppers inserted and feedbacks disabled
+20:41:40- Setting M1 for Hard
+20:41:40- Loading Scores...
+20:41:40- Loading SCORE from 2018-10-31 08:04 for Cu Linac-LEM
+20:41:41- Loading SCORE from 2018-10-31 08:04 for Hard BSY thru LTUH-LEM
+20:41:41- Loading SCORE from 2018-10-31 08:04 for Undulator Taper
+20:41:42- Loading SCORE from 2018-10-31 08:04 for Undulator-LEM
+20:41:43- Imma do the klystron complement
+20:41:46- Done messing with klystrons
+20:41:46- Setting 6x6 Parameters and LTU/UND feedback matrices
+20:41:46- Setting BC1PeakCurrent to: 230.0
+20:41:46- Setting amplitudeL2 to: 5144.63082966
+20:41:46- Setting phaseL2 to: -31.5589080149
+20:41:46- Setting peakCurrentL2 to: 3600.0
+20:41:46- Setting amplitudeL3 to: 8085.03764749
+20:41:46- Setting 6x6 complete
+20:41:46- Setting PMT voltages/Calibration/Offset
+20:41:46- Setting voltagePMT241 to: 600.0
+20:41:46- Setting calibrationPMT241 to: -8.29164060392e-06
+20:41:46- Setting offsetPMT241 to: -0.0217217034118
+20:41:46- Setting voltagePMT242 to: 600.0
+20:41:46- Setting calibrationPMT242 to: -6.77614122787e-06
+20:41:46- Setting offsetPMT242 to: -0.0241045672477
+20:41:46- Setting voltagePMT361 to: 700.0
+20:41:46- Setting calibrationPMT361 to: -5.04843587454e-06
+20:41:46- Setting offsetPMT361 to: -0.0220036324102
+20:41:46- Setting voltagePMT362 to: 800.0
+20:41:46- Setting calibrationPMT362 to: -4.50117647343e-06
+20:41:46- Setting offsetPMT362 to: -0.0250255638584
+20:41:46- Set PMT voltages/Calibration/Offset
+20:41:46- Going to high recipe
+20:41:48- Setting pressures
+20:41:48- Setting GD01PressureHi to: 2.0
+20:41:48- Setting GD02PressureHi to: 2.0
+20:41:48- Setting GD01PressureLo to: 2.0
+20:41:48- Setting GD02PressureLo to: 2.0
+20:41:48- Sending LTU/UND matrices to feedbacks
+20:41:51- Sent LTU/UND matrices to feedbacks and stopped/started
+20:41:51- BC2 Mover/Phase look the same, not sending values
+20:41:51- Setting xcavLaunchX to: 1.55
+20:41:51- Setting xcavLaunchY to: 0.01
+20:41:51- Setting heaterWaveplate1 to: 129.0
+20:41:51- Setting heaterWaveplate2 to: 56.1567857459
+20:41:51- Setting waveplateVHC to: 147.5
+20:41:51- Setting waveplateCH1 to: 122.0
+20:41:51- Setting undLaunchPosX to: 0.003
+20:41:51- Setting undLaunchAngX to: 0.0008
+20:41:51- Setting undLaunchPosY to: 0.0
+20:41:51- Setting undLaunchAngY to: 0.0
+20:41:51- Setting vernier to: 11.0988255804
+20:41:51- Setting phaseL3 to: -5.0
+20:41:51- Set Xcav, LHWP, Und Launch, L3 Phase and Vernier
+20:41:51- Setting pulseStackerDelay to: 11.0
+20:41:51- Setting pulseStackerWaveplate to: 38.0
+20:41:51- Set pulse stacker delay and waveplate
+20:41:51- Setting amplitudeL1X to: 20.0
+20:41:51- Setting phaseL1X to: -160.0
+20:41:51- Set L1X phase and amplitude
+20:41:51- Setting BC1LeftJaw to: -5.0
+20:41:51- Setting BC1RightJaw to: 2.5
+20:41:51- Set BC1 collimators
+20:41:51- Waiting for SCORE regions to load...
+20:42:17- Set/trimmed devices for Cu Linac-LEM
+20:42:17- Set/trimmed devices for Hard BSY thru LTUH-LEM
+20:42:17- Set/trimmed devices for Undulator Taper
+20:42:17- Set/trimmed devices for Undulator-LEM
+20:42:17- Checking M1 Mirror Position for Hard...
+20:42:17- Detected M1 Mirror in Hard Position
+20:42:17- DONE- remember CAMs!
+
 2018-10-27 10:47
 2018-10-28 08:11
 Message Log:
