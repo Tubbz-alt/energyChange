@@ -707,6 +707,7 @@ class EnergyChange(QMainWindow):
         except KeyError:
             self.printMessage("Error changing " + str(sector) + "-"
                               + str(station))
+
             pass
 
     # Restores original complement (the displayed complement to load will be
