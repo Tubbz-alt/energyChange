@@ -45,7 +45,7 @@ class EnergyChange(QMainWindow):
         # exist!)
         item = QTableWidgetItem()
         item.setText('---')
-        self.ui.tableWidget.setItem(6, 3, item)
+        self.ui.klysCompTable.setItem(6, 3, item)
 
         self.ui.textBrowser.append('Energy Change Initialized. Pick a time.')
 
@@ -100,7 +100,6 @@ class EnergyChange(QMainWindow):
         self.getScores()
         self.makeConnections()
 
-
     # Make gui SO PRETTY!
     def loadStyleSheet(self):
         try:
@@ -109,7 +108,7 @@ class EnergyChange(QMainWindow):
 
         # If my file disappears for some reason, load crappy black color scheme
         except IOError:
-            self.printStatusMessage('No style sheet found!')
+            self.printMessage('No style sheet found!')
             palette = QPalette()
 
             brush = QBrush(QColor(0, 0, 0))
@@ -168,7 +167,7 @@ class EnergyChange(QMainWindow):
                 scoreData = getScoreData(None, "color: red", "color: red", None)
 
         except:
-            self.printStatusMessage("Unable to filter SCORE's")
+            self.printMessage("Unable to filter SCORE's")
             self.ui.PhotonEnergyEdit.setText('')
             self.ui.ElectronEnergyEdit.setText('')
             scoreData = self.scoreObject.read_dates(beg_date=fourWeeksBack,
@@ -256,11 +255,11 @@ class EnergyChange(QMainWindow):
         self.ui.timeEdit.timeChanged.connect(self.userChange)
 
         # Set klystron table non-editable
-        self.ui.tableWidget.setEditTriggers(
+        self.ui.klysCompTable.setEditTriggers(
             QAbstractItemView.NoEditTriggers)
 
         # Set klystron table so that user can't highlight items
-        self.ui.tableWidget.setSelectionMode(
+        self.ui.klysCompTable.setSelectionMode(
             QAbstractItemView.NoSelection)
 
         self.ui.scoretable.setEditTriggers(
@@ -270,7 +269,7 @@ class EnergyChange(QMainWindow):
         self.ui.scoretable.itemSelectionChanged.connect(self.setScoreTime)
 
         # Handle user clicking stations to change complement
-        self.ui.tableWidget.cellClicked.connect(self.changeComp)
+        self.ui.klysCompTable.cellClicked.connect(self.changeComp)
 
         self.ui.PhotonEnergyEdit.returnPressed.connect(self.getScores)
         self.ui.ElectronEnergyEdit.returnPressed.connect(self.getScores)
@@ -297,13 +296,18 @@ class EnergyChange(QMainWindow):
                 self.changeEnergy()
 
             else:
-                self.printStatusMessage("Energy change aborted")
+                self.printMessage("Energy change aborted")
 
-    def printStatusMessage(self, message, printToStatus=False):
+    def printMessage(self, message, printToStatusText=False):
+        # Prints to xterm
         print message
+
+        # Prints to the message log on the left
         self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
                                    + "-</i> " + message)
-        if printToStatus:
+
+        # Conditionally prints to the text under the progress bar
+        if printToStatusText:
             self.ui.statusText.setText(message)
 
         self.ui.statusText.repaint()
@@ -314,7 +318,7 @@ class EnergyChange(QMainWindow):
         self.ui.restoreButton.setDisabled(True)
         self.getTimeInfo()
 
-        self.printStatusMessage("<b>Getting values...</b>")
+        self.printMessage("<b>Getting values...</b>")
         self.updateProgress(0 - self.diagnostics["progress"])
 
         QApplication.processEvents()
@@ -340,7 +344,7 @@ class EnergyChange(QMainWindow):
                       - self.setpoints["electronEnergyDesired"].val)
 
         if energyDiff > 0.005 and self.ui.stdz_cb.isChecked():
-            self.printStatusMessage("<b>I will standardize!!!</b>", False)
+            self.printMessage("<b>I will standardize!!!</b>", False)
 
         self.ui.startButton.setText("Start the change!")
 
@@ -350,7 +354,7 @@ class EnergyChange(QMainWindow):
                    + str(round(self.setpoints["electronEnergyDesired"].val, 2))
                    + "GeV)")
 
-        self.printStatusMessage(message, True)
+        self.printMessage(message, True)
 
         # We have values and are ready for the energy change
         self.diagnostics["valsObtained"] = True
@@ -369,7 +373,7 @@ class EnergyChange(QMainWindow):
             val = caget(pvStruct.getPV)
 
         self.setpoints[key].val = val
-        self.printStatusMessage(key + ": " + str(val))
+        self.printMessage(key + ": " + str(val))
 
         return val
 
@@ -406,7 +410,7 @@ class EnergyChange(QMainWindow):
                     # Else red
                     brush = QBrush(QColor(255, 0, 0))
 
-                Utils.paintCell(self.ui.tableWidget, row, column, item, brush)
+                Utils.paintCell(self.ui.klysCompTable, row, column, item, brush)
                 self.updateProgress(incrementalProgress)
 
             self.klystronComplement["desired"][column + 21] = stations
@@ -418,7 +422,7 @@ class EnergyChange(QMainWindow):
         item = QTableWidgetItem()
         # I can't figure out how to get the grey color and I don't care enough
         brush = QBrush(QColor.black)
-        Utils.paintCell(self.ui.tableWidget, 6, 3, item, brush)
+        Utils.paintCell(self.ui.klysCompTable, 6, 3, item, brush)
 
         # Copy list to have an 'original' list to revert to if user changes
         # complement and then wants to go back to original
@@ -446,20 +450,19 @@ class EnergyChange(QMainWindow):
         self.mirrorStatus["softPositionNeeded"] = not wantHardXrays
 
         if self.mirrorStatus["needToChangeM1"]:
-            self.printStatusMessage('Soft/Hard mirror change needed')
-            self.printStatusMessage("Will change M1 mirror to "
-                                    + ("Hard"
-                                       if self.mirrorStatus["hardPositionNeeded"]
-                                       else "Soft"))
+            self.printMessage('Soft/Hard mirror change needed')
+            self.printMessage("Will change M1 mirror to "
+                              + ("Hard" if self.mirrorStatus["hardPositionNeeded"]
+                                 else "Soft"))
 
         try:
             positionDesiredM3S = self.setpoints["positionDesiredM3S"].val
 
         except:
             # Channel archiver issues crop up from time to time
-            self.printStatusMessage('Could not determine M3 position at '
-                                    'requested time (Archive Appliance error). '
-                                    'Soft mirror will NOT be changed.')
+            self.printMessage('Could not determine M3 position at requested '
+                              'time (Archive Appliance error). Soft mirror '
+                              'will NOT be changed.')
 
             self.mirrorStatus["needToChangeM3"] = False
             self.ui.m3_cb.setChecked(False)
@@ -479,11 +482,11 @@ class EnergyChange(QMainWindow):
             # The setpoints are 4501um for AMO and -4503um for SXR
             if sxrPositionDesired:
                 self.mirrorStatus["amoPositionNeeded"] = False
-                positionDesiredM3S = -4503
+                positionDesiredM3S = caget("MIRR:FEE1:2811:HOLD_A")
 
             else:
                 self.mirrorStatus["amoPositionNeeded"] = True
-                positionDesiredM3S = 4501
+                positionDesiredM3S = caget("MIRR:FEE1:1811:HOLD_A")
 
         else:
             self.mirrorStatus["amoPositionNeeded"] = positionDesiredM3S > 0
@@ -498,14 +501,12 @@ class EnergyChange(QMainWindow):
                                                or goingFromAMOToSXR)
 
         if goingFromSXRToAMO:
-            self.printStatusMessage('M3 will be changed to provide beam to '
-                                    'AMO (unless beam will be going down '
-                                    'hard line)')
+            self.printMessage('M3 will be changed to provide beam to AMO '
+                              '(unless beam will be going down hard line)')
 
         if goingFromAMOToSXR:
-            self.printStatusMessage('M3 will be changed to provide beam to '
-                                    'SXR (unless beam will be going down '
-                                    'hard line)')
+            self.printMessage('M3 will be changed to provide beam to SXR '
+                              '(unless beam will be going down hard line)')
 
     ########################################################################
     # Where the magic happens (user has obtained values, time to do the
@@ -541,12 +542,12 @@ class EnergyChange(QMainWindow):
 
         # Everything went fine- woohoo!
         if not self.diagnostics["scoreProblem"]:
-            self.printStatusMessage("DONE- remember CAMs!", True)
+            self.printMessage("DONE- remember CAMs!", True)
 
         # If there was some problem loading scores, inform the user.
         else:
-            self.printStatusMessage("DONE - problem loading scores, SEE XTERM",
-                                    True)
+            self.printMessage("DONE - problem loading scores, SEE XTERM",
+                              True)
 
         self.logTime()
 
@@ -560,11 +561,12 @@ class EnergyChange(QMainWindow):
 
             if energyDiff > 0.005:
                 if self.diagnostics["scoreProblem"]:
-                    self.printStatusMessage("Skipping STDZ - problem loading "
-                                            "scores", True)
+                    self.printMessage("Skipping STDZ - problem loading scores",
+                                      True)
                 else:
                     self.stdzMags()
 
+    # TODO figure out a way to do this with the logging module
     def logTime(self):
         try:
             # Time logging
@@ -591,8 +593,8 @@ class EnergyChange(QMainWindow):
                         + self.ui.textBrowser.toPlainText() + "\n\n" + head)
 
         except:
-            self.printStatusMessage('problem with time logging or log writing',
-                                    False)
+            self.printMessage('problem with time logging or log writing',
+                              False)
 
     def implementSelectedChanges(self):
 
@@ -643,13 +645,13 @@ class EnergyChange(QMainWindow):
         # scores; should be false every time we start a change
         self.diagnostics["scoreProblem"] = False
 
-        self.printStatusMessage("<b>Setting values...</b>", False)
+        self.printMessage("<b>Setting values...</b>", False)
 
         # Set to false so that the user will be in initial state after
         # energy change (in case user wants to use again)
         self.diagnostics["valsObtained"] = False
 
-        self.printStatusMessage("Working...", True)
+        self.printMessage("Working...", True)
 
         QApplication.processEvents()
 
@@ -695,7 +697,7 @@ class EnergyChange(QMainWindow):
                 self.klystronComplement["desired"][sector][station] = 1
                 brush = QBrush(QColor(100, 255, 100))
 
-            Utils.paintCell(self.ui.tableWidget, row, column, item, brush)
+            Utils.paintCell(self.ui.klysCompTable, row, column, item, brush)
 
             self.ui.restoreButton.setDisabled(False)
 
@@ -703,8 +705,8 @@ class EnergyChange(QMainWindow):
         # self.klystronComplement["desired"] doesn't yet exist so just ignore
         # this error
         except KeyError:
-            self.printStatusMessage("Error changing " + str(sector) + "-"
-                                    + str(station))
+            self.printMessage("Error changing " + str(sector) + "-"
+                              + str(station))
             pass
 
     # Restores original complement (the displayed complement to load will be
@@ -729,7 +731,7 @@ class EnergyChange(QMainWindow):
                 elif klysStatus == 1:
                     brush = QBrush(QColor(100, 255, 100))
 
-                Utils.paintCell(self.ui.tableWidget, station - 1, sector - 21,
+                Utils.paintCell(self.ui.klysCompTable, station - 1, sector - 21,
                                 item, brush)
 
         self.ui.restoreButton.setDisabled(True)
@@ -798,7 +800,7 @@ class EnergyChange(QMainWindow):
     def disableFB(self):
         QApplication.processEvents()
 
-        self.printStatusMessage('Inserting stoppers, disabling feedbacks')
+        self.printMessage('Inserting stoppers, disabling feedbacks')
 
         if self.ui.fast6x6_cb.isChecked():
             caput('FBCK:FB04:LG01:STATE', '0')
@@ -819,12 +821,12 @@ class EnergyChange(QMainWindow):
             # Insert stoppers
             caput(pv, '0')
 
-        self.printStatusMessage('Stoppers inserted and feedbacks disabled')
+        self.printMessage('Stoppers inserted and feedbacks disabled')
 
     # Load scores for selected region(s). Use threading to speed things up
     # (calls ScoreThread function which is defined below)
     def loadScores(self):
-        self.printStatusMessage('Loading Scores...')
+        self.printMessage('Loading Scores...')
 
         QApplication.processEvents()
         self.ui.textBrowser.repaint()
@@ -849,7 +851,7 @@ class EnergyChange(QMainWindow):
                        + " " + self.scoreInfo["timeChosen"] + " for "
                        + region)
 
-            self.printStatusMessage(message)
+            self.printMessage(message)
             log("facility=pythonenergychange " + message)
 
             # Have a thread subclass to handle this (defined at bottom of this
@@ -876,7 +878,7 @@ class EnergyChange(QMainWindow):
             print "Error getting SCORE data for " + region
 
     def checkScoreLoads(self):
-        self.printStatusMessage("Waiting for SCORE regions to load...", True)
+        self.printMessage("Waiting for SCORE regions to load...", True)
 
         try:
             for thread in self.diagnostics["threads"]:
@@ -884,10 +886,10 @@ class EnergyChange(QMainWindow):
                 # score completion/failure messages come out together
                 status, region = thread.join()
                 if status == 0:
-                    self.printStatusMessage('Set/trimmed devices for ' + region)
+                    self.printMessage('Set/trimmed devices for ' + region)
                 else:
-                    self.printStatusMessage('Error loading ' + region
-                                            + ' region (see xterm)')
+                    self.printMessage('Error loading ' + region
+                                      + ' region (see xterm)')
 
                     # This flags the program to inform the user at end of change
                     #  that there was a problem
@@ -925,8 +927,7 @@ class EnergyChange(QMainWindow):
             caput(region, '0')
 
         status = caget('BEND:DMP1:400:CTRL')
-        self.printStatusMessage('Waiting for BEND:DMP1:400:CTRL to read '
-                                '"Ready"...')
+        self.printMessage('Waiting for BEND:DMP1:400:CTRL to read "Ready"...')
 
         # Simple loop to wait for this supply to finish trimming (this supply
         # takes longest; how kalsi determines when to start stdz)
@@ -938,7 +939,7 @@ class EnergyChange(QMainWindow):
         # Paranoid sleep, sometimes one of the BSY quads wasn't standardizing
         sleep(3)
 
-        self.printStatusMessage('Starting STDZ')
+        self.printMessage('Starting STDZ')
 
         # Was QUAD:BSY0:1, 28 before BSY reconfig. Weren't in LEM. Unsure if
         # new devices will be.
@@ -957,7 +958,7 @@ class EnergyChange(QMainWindow):
     # changes)
     def setKlys(self):
         QApplication.processEvents()
-        self.printStatusMessage('Imma do the klystron complement')
+        self.printMessage('Imma do the klystron complement')
 
         for sector in xrange(21, 31):
             for station in xrange(1, 9):
@@ -966,15 +967,14 @@ class EnergyChange(QMainWindow):
                     caput('KLYS:LI' + str(sector) + ':' + str(station) + '1'
                           + ':BEAMCODE1_TCTL', klysStatus)
 
-        self.printStatusMessage('Done messing with klystrons')
+        self.printMessage('Done messing with klystrons')
         self.updateProgress(25)
 
     # Sets 6x6 feedback and also loads matrices for LTU(fast only; slow not in
     # score) and UND(fast+slow) feedbacks
     def set6x6(self):
 
-        self.printStatusMessage('Setting 6x6 Parameters and LTU/UND '
-                                'feedback matrices')
+        self.printMessage('Setting 6x6 Parameters and LTU/UND feedback matrices')
 
         caput('FBCK:FB04:LG01:STATE', '0')
 
@@ -984,19 +984,19 @@ class EnergyChange(QMainWindow):
 
         caput('FBCK:FB04:LG01:STATE', '1')
 
-        self.printStatusMessage('Setting 6x6 complete')
+        self.printMessage('Setting 6x6 complete')
 
     def setAllTheSetpoints(self):
         QApplication.processEvents()
         if self.ui.matrices_cb.isChecked():
-            self.printStatusMessage('Sending LTU/UND matrices to feedbacks')
+            self.printMessage('Sending LTU/UND matrices to feedbacks')
             data = self.scoreObject.read_pvs("Feedback-All",
                                              self.scoreInfo["dateChosen"],
                                              self.scoreInfo["timeChosen"]
                                              + ':00')
             Utils.setMatricesAndRestartFeedbacks(data)
-            self.printStatusMessage('Sent LTU/UND matrices to feedbacks and '
-                                    'stopped/started')
+            self.printMessage('Sent LTU/UND matrices to feedbacks and '
+                              'stopped/started')
 
         # Set BC2 chicane mover and phase (magnet strength is set in
         # LoadScores())
@@ -1007,20 +1007,19 @@ class EnergyChange(QMainWindow):
         # waveplates, vernier etc.
         if self.ui.setpoints_cb.isChecked():
             self.caputKeyList("setpoints")
-            self.printStatusMessage('Set Xcav, LHWP, Und Launch, L3 Phase and '
-                                    'Vernier')
+            self.printMessage('Set Xcav, LHWP, Und Launch, L3 Phase and Vernier')
 
         if self.ui.pstack_cb.isChecked():
             self.caputKeyList("pulseStacker")
-            self.printStatusMessage('Set pulse stacker delay and waveplate')
+            self.printMessage('Set pulse stacker delay and waveplate')
 
         if self.ui.l1x_cb.isChecked():
             self.caputKeyList("L1X")
-            self.printStatusMessage('Set L1X phase and amplitude')
+            self.printMessage('Set L1X phase and amplitude')
 
         if self.ui.bc1coll_cb.isChecked():
             self.caputKeyList("BC1")
-            self.printStatusMessage('Set BC1 collimators')
+            self.printMessage('Set BC1 collimators')
 
     # Set mirrors to desired positions
     def setMirrors(self):
@@ -1031,12 +1030,12 @@ class EnergyChange(QMainWindow):
 
         if self.mirrorStatus["hardPositionNeeded"]:
             if self.ui.m1_cb.isChecked():
-                self.printStatusMessage('Setting M1 for Hard')
+                self.printMessage('Setting M1 for Hard')
                 caput('MIRR:FEE1:1561:MOVE', '1')
 
         elif self.mirrorStatus["softPositionNeeded"]:
             if self.ui.m1_cb.isChecked():
-                self.printStatusMessage('Setting M1 for Soft')
+                self.printMessage('Setting M1 for Soft')
                 caput('MIRR:FEE1:0561:MOVE', '1')
 
             if self.ui.m3_cb.isChecked():
@@ -1044,22 +1043,22 @@ class EnergyChange(QMainWindow):
                 sleep(.3)
 
                 if self.mirrorStatus["sxrPositionNeeded"]:
-                    self.printStatusMessage('Setting M3 for SXR')
+                    self.printMessage('Setting M3 for SXR')
                     caput('MIRR:FEE1:2811:MOVE', '1')
 
                 elif self.mirrorStatus["amoPositionNeeded"]:
-                    self.printStatusMessage('Setting M3 for AMO')
+                    self.printMessage('Setting M3 for AMO')
                     caput('MIRR:FEE1:1811:MOVE', '1')
 
     def waitForMirror(self, statusPV, lockPV, mirror, desiredPosition):
-        self.printStatusMessage('Checking ' + mirror + ' Mirror Position for '
-                                + desiredPosition + '...')
+        self.printMessage('Checking ' + mirror + ' Mirror Position for '
+                          + desiredPosition + '...')
 
         while not caget(statusPV):
             QApplication.processEvents()
             sleep(1)
-        self.printStatusMessage('Detected ' + mirror + ' Mirror in '
-                                + desiredPosition + ' Position')
+        self.printMessage('Detected ' + mirror + ' Mirror in '
+                          + desiredPosition + ' Position')
         caput(lockPV, '0')
 
     # Check that mirrors reach their desired positions
@@ -1093,15 +1092,14 @@ class EnergyChange(QMainWindow):
 
         if (BC2MoverNow == self.setpoints["BC2Mover"].val
                 and BC2PhaseNow == self.setpoints["BC2Phase"].val):
-            self.printStatusMessage('BC2 Mover/Phase look the same, '
-                                    'not sending values')
+            self.printMessage('BC2 Mover/Phase look the same, not sending values')
             return
 
-        self.printStatusMessage('Setting BC2 Mover and Phase')
+        self.printMessage('Setting BC2 Mover and Phase')
 
         self.caputKeyList("BC2")
 
-        self.printStatusMessage('Set BC2 Mover and Phase')
+        self.printMessage('Set BC2 Mover and Phase')
 
     ############################################################################
     # HHHHHHHHHIIIIIIIIIIIIIIIIIIIIII
@@ -1109,8 +1107,8 @@ class EnergyChange(QMainWindow):
     ############################################################################
 
     def caputSetpoint(self, key):
-        self.printStatusMessage("Setting " + key + " to: "
-                                + str(self.setpoints[key].val))
+        self.printMessage("Setting " + key + " to: "
+                          + str(self.setpoints[key].val))
         caput(self.setpoints[key].setPV, self.setpoints[key].val)
 
     # Set gas detector recipe/pressure and pmt voltages
@@ -1127,30 +1125,30 @@ class EnergyChange(QMainWindow):
 
         QApplication.processEvents()
         if self.ui.pmt_cb.isChecked():
-            self.printStatusMessage('Setting PMT voltages/Calibration/Offset')
+            self.printMessage('Setting PMT voltages/Calibration/Offset')
             QApplication.processEvents()
 
             self.caputKeyList("PMT")
 
-            self.printStatusMessage('Set PMT voltages/Calibration/Offset')
+            self.printMessage('Set PMT voltages/Calibration/Offset')
 
         if self.ui.recipe_cb.isChecked():
             if (self.mirrorStatus["needToChangeM1"]
                     and self.mirrorStatus["softPositionNeeded"]):
 
-                self.printStatusMessage('Changing recipe from high to low')
+                self.printMessage('Changing recipe from high to low')
                 QApplication.processEvents()
 
                 changeRecipe("PHI_DES", 14, 4)
 
             elif self.mirrorStatus["hardPositionNeeded"]:
-                self.printStatusMessage('Going to high recipe')
+                self.printMessage('Going to high recipe')
                 QApplication.processEvents()
 
                 changeRecipe("PLO_DES", 0, 3)
 
         if self.ui.pressure_cb.isChecked():
-            self.printStatusMessage('Setting pressures')
+            self.printMessage('Setting pressures')
             QApplication.processEvents()
 
             self.caputKeyList("pressure")
@@ -1160,7 +1158,8 @@ class EnergyChange(QMainWindow):
             try:
                 self.caputSetpoint(key)
             except:
-                self.printStatusMessage("Error setting " + key)
+                self.printMessage("Error setting " + key)
+
 
 def main():
     app = QApplication(argv)
