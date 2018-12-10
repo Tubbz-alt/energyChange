@@ -6,8 +6,6 @@
 # BC1 collimators BC2 phase PV (SIOC:SYS0:ML00:AO063) for different R56;
 # moves mirrors; standardizes and sets vernier/L3 Phase along with UND/LTU
 # feedback matrices and other things I haven't documented yet.
-from logging.handlers import TimedRotatingFileHandler
-from os import path
 from sys import exit, argv
 from PyQt4.QtCore import QTime, QDate, Qt
 
@@ -39,19 +37,8 @@ logger = logging.getLogger(__name__)
 class EnergyChange(QMainWindow):
     def __init__(self, parent=None):
         QMainWindow.__init__(self, parent)
-        self.cssFile = path.join(Utils.CURR_DIR, "style.css")
 
-        logger = logging.getLogger(__name__)
-        logger.setLevel(logging.INFO)
-
-        logname = path.join(Utils.CURR_DIR, "echg.log")
-        handler = TimedRotatingFileHandler(logname, when="midnight", interval=1,
-                                           backupCount=14)
-        logFormat = logging.Formatter('%(asctime)s - %(levelname)s '
-                                      '- %(message)s')
-        handler.setFormatter(logFormat)
-        logger.addHandler(handler)
-        logger.info("Starting Energy Change")
+        Utils.setupLogger(logger)
 
         self.ui = Ui_EnergyChange()
         self.ui.setupUi(self)
@@ -120,7 +107,7 @@ class EnergyChange(QMainWindow):
     # Make gui SO PRETTY!
     def loadStyleSheet(self):
         try:
-            with open(self.cssFile, "r") as f:
+            with open(Utils.CSS_FILE, "r") as f:
                 self.setStyleSheet(f.read())
 
         # If my file disappears for some reason, load crappy black color scheme
