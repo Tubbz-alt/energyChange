@@ -6,13 +6,14 @@
 # BC1 collimators BC2 phase PV (SIOC:SYS0:ML00:AO063) for different R56;
 # moves mirrors; standardizes and sets vernier/L3 Phase along with UND/LTU
 # feedback matrices and other things I haven't documented yet.
+from logging.handlers import TimedRotatingFileHandler
 from os import path
 from sys import exit, argv
 from PyQt4.QtCore import QTime, QDate, Qt
 
 from PyQt4.QtGui import (QApplication, QMainWindow, QAbstractItemView,
                          QTableWidgetItem, QPalette, QBrush, QColor,
-                         QMessageBox)
+                         QMessageBox, QPushButton)
 
 from epics import caget, caput
 from time import sleep
@@ -26,8 +27,11 @@ from pyScore import PyScore
 from copy import deepcopy
 from numpy import array
 import energyChangeUtils as Utils
+import logging
 
 from energyChange_UI import Ui_EnergyChange
+
+logger = logging.getLogger(__name__)
 
 
 # Where the magic happens, the main class that runs this baby!
@@ -36,6 +40,19 @@ class EnergyChange(QMainWindow):
     def __init__(self, parent=None):
         QMainWindow.__init__(self, parent)
         self.cssFile = path.join(Utils.CURR_DIR, "style.css")
+
+        logger = logging.getLogger(__name__)
+        logger.setLevel(logging.INFO)
+
+        logname = path.join(Utils.CURR_DIR, "echg.log")
+        handler = TimedRotatingFileHandler(logname, when="midnight", interval=1,
+                                           backupCount=14)
+        logFormat = logging.Formatter('%(asctime)s - %(levelname)s '
+                                      '- %(message)s')
+        handler.setFormatter(logFormat)
+        logger.addHandler(handler)
+        logger.info("Starting Energy Change")
+
         self.ui = Ui_EnergyChange()
         self.ui.setupUi(self)
         self.ui.scoretable.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -301,6 +318,7 @@ class EnergyChange(QMainWindow):
     def printMessage(self, message, printToStatusText=False):
         # Prints to xterm
         print message
+        logger.info(message)
 
         # Prints to the message log on the left
         self.ui.textBrowser.append("<i>" + str(datetime.now())[11:19]
@@ -355,6 +373,7 @@ class EnergyChange(QMainWindow):
                    + "GeV)")
 
         self.printMessage(message, True)
+        logger.info("\n")
 
         # We have values and are ready for the energy change
         self.diagnostics["valsObtained"] = True
@@ -457,6 +476,7 @@ class EnergyChange(QMainWindow):
 
         try:
             positionDesiredM3S = self.setpoints["positionDesiredM3S"].val
+            amoDefault = positionDesiredM3S > 0
 
         except:
             # Channel archiver issues crop up from time to time
@@ -475,9 +495,24 @@ class EnergyChange(QMainWindow):
         if self.mirrorStatus["softPositionNeeded"]:
             txt = ("<P><FONT COLOR='#FFF'>Select desired soft x-ray hutch"
                    "</FONT></P>")
-            # noinspection PyCallByClass
-            sxrPositionDesired = QMessageBox.question(self, "Hutch Selector",
-                                                      txt, "AMO", "SXR")
+
+            amoButton = QPushButton("AMO")
+            sxrButton = QPushButton("SXR")
+
+            defaultButton = amoButton if amoDefault else sxrButton
+
+            hutchSelector = QMessageBox(parent=self, text=txt,
+                                        windowTitle="Hutch Selector",
+                                        icon=QMessageBox.Question)
+
+            hutchSelector.addButton(amoButton, QMessageBox.NoRole)
+            hutchSelector.addButton(sxrButton, QMessageBox.YesRole)
+
+            # Define behavior for pressing enter and exiting out
+            hutchSelector.setDefaultButton(defaultButton)
+            hutchSelector.setEscapeButton(defaultButton)
+
+            sxrPositionDesired = hutchSelector.exec_()
 
             # The setpoints are 4501um for AMO and -4503um for SXR
             if sxrPositionDesired:
@@ -489,7 +524,7 @@ class EnergyChange(QMainWindow):
                 positionDesiredM3S = caget("MIRR:FEE1:1811:HOLD_A")
 
         else:
-            self.mirrorStatus["amoPositionNeeded"] = positionDesiredM3S > 0
+            self.mirrorStatus["amoPositionNeeded"] = amoDefault
 
         self.mirrorStatus["sxrPositionNeeded"] = \
             not self.mirrorStatus["amoPositionNeeded"]
@@ -549,8 +584,6 @@ class EnergyChange(QMainWindow):
             self.printMessage("DONE - problem loading scores, SEE XTERM",
                               True)
 
-        self.logTime()
-
     def checkAndStandardize(self):
         if self.ui.stdz_cb.isChecked():
             # TODO why is this relevant information?
@@ -565,36 +598,6 @@ class EnergyChange(QMainWindow):
                                       True)
                 else:
                     self.stdzMags()
-
-    # TODO figure out a way to do this with the logging module
-    def logTime(self):
-        try:
-            # Time logging
-            curtime = datetime.now()
-            elapsed = curtime - self.timestamp["changeStarted"]
-            old_value = caget('SIOC:SYS0:ML03:AO707')
-            caput('SIOC:SYS0:ML03:AO707', old_value + elapsed.total_seconds())
-            logFile = path.join(Utils.CURR_DIR, "log.txt")
-
-            # Write textBrowser text to a file so I can diagnose the basics
-            # when something goes wrong
-            with open(logFile, "r+") as f:
-                # Reading only the first 140,000 bytes of the log file (should
-                # work out to approximately 2 weeks of logs. I can't imagine
-                # needing more history than that)
-                head = f.read(140000)
-
-                # Moving to the front of the file so that we can prepend the new
-                # log data
-                f.seek(0, 0)
-                f.write(self.scoreInfo["dateChosen"] + " "
-                        + self.scoreInfo["timeChosen"] + "\n"
-                        + str(curtime)[0:10] + " " + str(curtime)[11:16] + "\n"
-                        + self.ui.textBrowser.toPlainText() + "\n\n" + head)
-
-        except:
-            self.printMessage('problem with time logging or log writing',
-                              False)
 
     def implementSelectedChanges(self):
 
@@ -1161,13 +1164,17 @@ class EnergyChange(QMainWindow):
             except:
                 self.printMessage("Error setting " + key)
 
+    def close(self):
+        logger.info("\n")
+        self.scoreObject.exit_score()
+
 
 def main():
     app = QApplication(argv)
     window = EnergyChange()
 
     # Close the SCORE connection
-    app.aboutToQuit.connect(window.scoreObject.exit_score)
+    app.aboutToQuit.connect(window.close)
 
     window.show()
     exit(app.exec_())
