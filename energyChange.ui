@@ -1838,7 +1838,7 @@ p, li { white-space: pre-wrap; }
     <property name="title">
      <string>Proposed Complement:</string>
     </property>
-    <widget class="QTableWidget" name="tableWidget">
+    <widget class="QTableWidget" name="klysCompTable">
      <property name="geometry">
       <rect>
        <x>3</x>
@@ -2931,7 +2931,7 @@ p, li { white-space: pre-wrap; }
      <x>0</x>
      <y>0</y>
      <width>850</width>
-     <height>25</height>
+     <height>26</height>
     </rect>
    </property>
   </widget>

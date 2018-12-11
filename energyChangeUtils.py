@@ -1,14 +1,21 @@
 import time
 
+import logging
 from PyQt4.QtCore import QDate, QTime, Qt
 from PyQt4.QtGui import QTableWidgetItem
-from os import popen
+from logging.handlers import TimedRotatingFileHandler
+from os import popen, path
 from epics import caget, caput
 from threading import Thread
 from urllib2 import urlopen
 from json import load
 from subprocess import Popen
 from datetime import datetime
+
+
+CURR_DIR = path.abspath(path.dirname(__file__))
+CSS_FILE = path.join(CURR_DIR, "style.css")
+LOG_FILE = path.join(CURR_DIR, "echg.log")
 
 
 # Utility class to try to replicate C struct functionality
@@ -406,3 +413,14 @@ def score():
 # Function to launch model GUI
 def modelMan():
     Popen(['modelMan'])
+
+
+def setupLogger(logger):
+    logger.setLevel(logging.INFO)
+    handler = TimedRotatingFileHandler(LOG_FILE, when="midnight", interval=1,
+                                       backupCount=14)
+    logFormat = logging.Formatter('%(asctime)s - %(levelname)s '
+                                  '- %(message)s')
+    handler.setFormatter(logFormat)
+    logger.addHandler(handler)
+    logger.info("Starting Energy Change")
