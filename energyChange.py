@@ -957,6 +957,12 @@ class EnergyChange(QMainWindow):
                 if klysStatus is not None:
                     caput('KLYS:LI' + str(sector) + ':' + str(station) + '1'
                           + ':BEAMCODE1_TCTL', klysStatus)
+        
+        # Restore 24-1, 24-2, and 24-3 PAC triggers too
+        for j in [1, 2, 3]:
+            if caget('KLYS:LI24:{}1:HSTAMODESET'.format(j)) == 0:
+                caput('ACCL:LI24:{}00:KLY_C_1_TCTL'.format(j),
+                      self.klystronComplement["desired"][24][j])
 
         self.printMessage('Done messing with klystrons')
         self.updateProgress(25)
