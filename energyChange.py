@@ -1,4 +1,4 @@
-#!/usr/local/lcls/package/python/current/bin/python
+#!/usr/bin/env python
 # Author- Zimmer (Lil CZ), Editor - Lisa
 # Loads scores; changes GDET Pressures, Recipes, PMT Voltages, Calibrations,
 # Offsets; 6x6 stuff (including BC1 Peak Current); XCAV and Und Launch feedback
@@ -335,17 +335,18 @@ class EnergyChange(QMainWindow):
                                      + len(self.mirrorStatus))
 
         for key, pvStruct in self.setpoints.iteritems():
+            print key, pvStruct
             self.getAndLogVal(key, pvStruct,
                               getHistorical=pvStruct.historical)
             self.updateProgress(incrementalProgress)
 
         self.getKlys(incrementalProgress)
 
-        self.getMirrors()
+        #self.getMirrors() #RECONFIG needed?!?  Commented out 2/13/2020 Zimmer
         self.updateProgress(incrementalProgress * len(self.mirrorStatus))
         self.diagnostics["valsObtained"] = True
 
-        energyDiff = (self.setpoints["electronEnergyCurrent"].val
+        energyDiff = (self.setpoints["electronEnergyCurrent"].val 
                       - self.setpoints["electronEnergyDesired"].val)
 
         if energyDiff > 0.005 and self.ui.stdz_cb.isChecked():
@@ -427,7 +428,7 @@ class EnergyChange(QMainWindow):
 
         item = QTableWidgetItem()
         # I can't figure out how to get the grey color and I don't care enough
-        brush = QBrush(QColor.black)
+        brush = QBrush(QColor(0,0,0))
         Utils.paintCell(self.ui.klysCompTable, 6, 3, item, brush)
 
         # Copy list to have an 'original' list to revert to if user changes
@@ -436,6 +437,7 @@ class EnergyChange(QMainWindow):
             deepcopy(self.klystronComplement["desired"])
 
     # Get mirror positions from time of interest
+    # Zimmer- commented out the calling of this function above, 2/2020.  Don't think needed
     def getMirrors(self):
 
         goingFromHardToSoft = (self.setpoints["photonEnergyCurrent"].val
@@ -541,7 +543,12 @@ class EnergyChange(QMainWindow):
 
         # Set gas detector recipe/pressures/PMTs: conditional statements
         # are contained in function (e.g. user doesn't want PMTs set)
-        self.setGdet()
+        
+        ####
+        #Commented out Zimmer 2/2020
+        ###
+        #self.setGdet()
+        
         self.updateProgress(5)
         self.setAllTheSetpoints()
         self.updateProgress(10)
@@ -551,10 +558,10 @@ class EnergyChange(QMainWindow):
 
         self.checkAndStandardize()
 
-        if (self.mirrorStatus["needToChangeM1"]
+        '''if (self.mirrorStatus["needToChangeM1"]
                 or self.mirrorStatus["needToChangeM3"]):
             # Check to make sure that mirror gets to where it should
-            self.checkMirrors()
+            self.checkMirrors()'''#Zimmer 2/2020
 
         self.updateProgress(100 - self.diagnostics["progress"])
 
@@ -573,7 +580,6 @@ class EnergyChange(QMainWindow):
 
     def checkAndStandardize(self):
         if self.ui.stdz_cb.isChecked():
-            # TODO why is this relevant information?
             # sometimes archive appliance returns ridiculous # of digits-
             # i.e. 3.440000000000000013 instead of 3.44
             energyDiff = (self.setpoints["electronEnergyCurrent"].val
@@ -592,20 +598,20 @@ class EnergyChange(QMainWindow):
             # Insert stoppers and disable feedback
             self.disableFB()
 
-        # Set mirrors immediately so they can start moving as they take
+        '''# Set mirrors immediately so they can start moving as they take
         # time (will check mirrors at end of calling function using
         # self.CheckMirrors)
 
         if (self.mirrorStatus["needToChangeM1"]
                 or self.mirrorStatus["needToChangeM3"]):
-            self.setMirrors()
+            self.setMirrors()'''#Zimmer 2/2020
 
         self.updateProgress(10)
 
         # Load scores if user wants
 
-        if (self.ui.score_cb.isChecked() or self.ui.injector_cb.isChecked()
-                or self.ui.taper_cb.isChecked()):
+        if (self.ui.copper_cb.isChecked() or self.ui.injector_cb.isChecked() or self.ui.clts_cb.isChecked or self.ui.bsyltuhard_cb.isChecked()
+            or self.ui.bsyltusoft_cb.isChecked() or self.ui.undhard_cb.isChecked() or self.ui.undsoft_cb.isChecked()):
             self.loadScores()
 
         else:
@@ -678,7 +684,7 @@ class EnergyChange(QMainWindow):
             klysStatus = self.klystronComplement["desired"][sector][station]
             item = QTableWidgetItem()
 
-            brush = QBrush(QColor.black)
+            brush = QBrush(QColor(0,0,0))
 
             if klysStatus == 1:
                 self.klystronComplement["desired"][sector][station] = 0
@@ -715,7 +721,7 @@ class EnergyChange(QMainWindow):
                 klysStatus = self.klystronComplement["desired"][sector][station]
                 item = QTableWidgetItem()
 
-                brush = QBrush(QColor.black)
+                brush = QBrush(QColor(0,0,0))
 
                 if klysStatus == 0:
                     brush = QBrush(QColor(255, 0, 0))
@@ -799,8 +805,11 @@ class EnergyChange(QMainWindow):
         if self.ui.injector_cb.isChecked():
             caput('IOC:BSY0:MP01:MSHUTCTL', '0')
 
+            #BYKIK fixed, TDUND is now DUMP:LTUS:972:PNEUMATIC and LTUH:970?
+
         pvs = ['DUMP:LI21:305:TD11_PNEU', 'IOC:BSY0:MP01:BYKIKCTL',
-               'DUMP:LTU1:970:TDUND_PNEU', 'FBCK:FB04:LG01:S4USED',
+               'IOC:BSY0:MP01:BYKIKSCTL', 'DUMP:LTUH:970:PNEUMATIC', #2020FIX CORRECT THESE!!!!!
+               'DUMP:LTUS:972:PNEUMATIC', 'FBCK:FB04:LG01:S4USED',
                'FBCK:FB04:LG01:S5USED', 'FBCK:FB04:LG01:S6USED',
                'FBCK:FB01:TR04:MODE', 'FBCK:FB01:TR05:MODE',
                'FBCK:FB03:TR04:MODE', 'FBCK:L2L0:1:ENABLE',
@@ -815,6 +824,9 @@ class EnergyChange(QMainWindow):
         self.printMessage('Stoppers inserted and feedbacks disabled')
 
     # Load scores for selected region(s). Use threading to speed things up
+    #####
+    # This is where score region names are defined, corresponding to selected checkboxes!!!
+    ####
     # (calls ScoreThread function which is defined below)
     def loadScores(self):
         self.printMessage('Loading Scores...')
@@ -828,13 +840,22 @@ class EnergyChange(QMainWindow):
         if self.ui.injector_cb.isChecked():
             self.getScoreData("Gun to TD11-LEM", regionList)
 
-        if self.ui.score_cb.isChecked():
-            for region in ["Cu Linac-LEM", "Hard BSY thru LTUH-LEM"]:
+        if self.ui.copper_cb.isChecked():
+            self.getScoreData("Cu Linac", regionList)
+
+        if self.ui.bsyltuhard_cb.isChecked():
+            self.getScoreData("Hard BSY thru LTU", regionList)
+
+        if self.ui.bsyltusoft_cb.isChecked():
+            self.getScoreData("Soft BSY thru LTU", regionList)
+
+        if self.ui.undhard_cb.isChecked():
+            for region in ["UNDH Taper", "UNDH"]:
                 self.getScoreData(region, regionList)
 
-        if self.ui.taper_cb.isChecked():
-            for region in ["Undulator Taper", "Undulator-LEM"]:
-                self.getScoreData(region, regionList)
+        if self.ui.undsoft_cb.isChecked():
+            for region in ["UNDS Taper", "UNDS"]:
+                self.getScoreData(region, regionList)#2020FIX 5/28/2020 score namescorrect to here
 
         # Put message in message log that scores are being loaded
         for region in regionList:
@@ -905,8 +926,11 @@ class EnergyChange(QMainWindow):
 
     # Check that bend dump has finished trimming and then start standardize
     def stdzMags(self):
-        # Set LTU region to be standardized
+        # Set LTUH region to be standardized
         caput('SIOC:SYS0:ML01:AO405', '1')
+
+        # Set LTUS region to be standardized
+        caput('SIOC:SYS0:ML01:AO406', '1')
 
         # NO L3,L2,L1,L0 STDZ.  Also, don't include QMs to Design and don't
         # include UND to Matched Design
@@ -917,13 +941,23 @@ class EnergyChange(QMainWindow):
         for region in regions:
             caput(region, '0')
 
-        status = caget('BEND:DMP1:400:CTRL')
-        self.printMessage('Waiting for BEND:DMP1:400:CTRL to read "Ready"...')
+        status = caget('BEND:DMPH:400:CTRL')
+        self.printMessage('Waiting for BEND:UNDH:400:CTRL to read "Ready"...')
 
         # Simple loop to wait for this supply to finish trimming (this supply
-        # takes longest; how kalsi determines when to start stdz)
+        # takes longest)
         while status != 0:
-            status = caget('BEND:DMP1:400:CTRL')
+            status = caget('BEND:DMPH:400:CTRL')
+            QApplication.processEvents()
+            sleep(0.2)
+
+        status = caget('BEND:DMPS:400:CTRL')
+        self.printMessage('Waiting for BEND:DMPS:400:CTRL to read "Ready"...')
+
+        # Simple loop to wait for this supply to finish trimming (this supply
+        # takes longest)
+        while status != 0:
+            status = caget('BEND:DMPS:400:CTRL')
             QApplication.processEvents()
             sleep(0.2)
 
@@ -934,11 +968,11 @@ class EnergyChange(QMainWindow):
 
         # Was QUAD:BSY0:1, 28 before BSY reconfig. Weren't in LEM. Unsure if
         # new devices will be.
-        for bsyquad in ['QUAD:CLTH:140:CTRL', 'QUAD:CLTH:170:CTRL']:
-            caput(bsyquad, '9')
-
-        Popen('StripTool /u1/lcls/tools/StripTool/config/byd_by1_stdz.stp &',
-              shell=True)
+        #for bsyquad in ['QUAD:CLTH:140:CTRL', 'QUAD:CLTH:170:CTRL']:
+            #caput(bsyquad, '9')
+        ###THESE LINES COMMENTED OUT 2020FIX 5/28/2020 Zimmer
+        #Popen('StripTool /u1/lcls/tools/StripTool/config/byd_by1_stdz.stp &',
+              #shell=True)
 
         # STDZ to LEM command through LEMServer
         caput('SIOC:SYS0:ML01:AO143', '3')
@@ -1019,6 +1053,9 @@ class EnergyChange(QMainWindow):
             self.printMessage('Set BC1 collimators')
 
     # Set mirrors to desired positions
+    ###
+    #Call to this function commented out Zimmer 2/2020
+    ###
     def setMirrors(self):
         QApplication.processEvents()
 
@@ -1047,6 +1084,8 @@ class EnergyChange(QMainWindow):
                     self.printMessage('Setting M3 for AMO')
                     caput('MIRR:FEE1:1811:MOVE', '1')
 
+
+    ###Only called by mirror
     def waitForMirror(self, statusPV, lockPV, mirror, desiredPosition):
         self.printMessage('Checking ' + mirror + ' Mirror Position for '
                           + desiredPosition + '...')
@@ -1059,6 +1098,9 @@ class EnergyChange(QMainWindow):
         caput(lockPV, '0')
 
     # Check that mirrors reach their desired positions
+    ###
+    #Commented out call to this Zimmer 2/2020
+    ###
     def checkMirrors(self):
         QApplication.processEvents()
 
@@ -1109,6 +1151,9 @@ class EnergyChange(QMainWindow):
         caput(self.setpoints[key].setPV, self.setpoints[key].val)
 
     # Set gas detector recipe/pressure and pmt voltages
+    ###
+    #Commented out above Zimmer 2/2020
+    ###
     def setGdet(self):
 
         def changeRecipe(pressureDes, pressureSleep, recipeVal):
